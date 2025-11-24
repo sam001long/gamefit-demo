@@ -1,4 +1,4 @@
-// 簡單工具：算兩點距離
+// 簡單工具：算兩點距離（目前沒用到，但可以保留）
 function dist(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -9,7 +9,7 @@ function dist(a, b) {
 function angleBetween(a, b, c) {
   const ab = { x: a.x - b.x, y: a.y - b.y };
   const cb = { x: c.x - b.x, y: c.y - b.y };
-  const dot = ab.x * cb.x + ab.y * cb.y;
+  const dot = ab.x * cb.x + cb.y * cb.y;
   const magAB = Math.sqrt(ab.x * ab.x + ab.y * ab.y);
   const magCB = Math.sqrt(cb.x * cb.x + cb.y * cb.y);
   if (!magAB || !magCB) return 0;
@@ -25,12 +25,21 @@ const ctx = canvas.getContext("2d");
 const angleEl = document.getElementById("angle");
 const qualityEl = document.getElementById("quality");
 const scoreEl = document.getElementById("score");
+const stableEl = document.getElementById("stable");
+const completionEl = document.getElementById("completion");
+const completionBar = document.getElementById("completion-bar");
 
 let detector = null;
 let score = 0;
 
+// 用來記錄「保持好姿勢」的時間
+let stableStart = null; // 開始穩定的時刻 (ms)
+let stableSeconds = 0;  // 累積穩定秒數
+
+// 設定：要保持幾秒視為 100% 完成（你可以改成 5 或 8 之類）
+const TARGET_STABLE_SECONDS = 10;
+
 async function setupCamera() {
-  // 嘗試使用後鏡頭
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
@@ -48,7 +57,6 @@ async function setupCamera() {
 }
 
 async function loadModel() {
-  // 使用 MoveNet
   detector = await poseDetection.createDetector(
     poseDetection.SupportedModels.MoveNet,
     {
@@ -71,7 +79,7 @@ function drawKeypoints(keypoints) {
   ctx.strokeStyle = "#38bdf8";
   ctx.fillStyle = "#f97316";
 
-  // 畫點
+  // 畫關節點
   keypoints.forEach((kp) => {
     if (kp.score < 0.3) return;
     const x = (kp.x / video.videoWidth) * canvas.width;
@@ -81,7 +89,7 @@ function drawKeypoints(keypoints) {
     ctx.fill();
   });
 
-  // 定義簡單骨架線（只畫幾條就好）
+  // 簡易骨架（只畫部分線段）
   const adjacentPairs = [
     ["left_shoulder", "left_elbow"],
     ["left_elbow", "left_wrist"],
@@ -117,11 +125,8 @@ function drawKeypoints(keypoints) {
 }
 
 function evaluatePose(keypoints) {
-  // 以左膝為例：用 left_hip - left_knee - left_ankle 算角度
   const hip = keypoints.find((k) => k.name === "left_hip" || k.part === "left_hip");
-  const knee = keypoints.find(
-    (k) => k.name === "left_knee" || k.part === "left_knee"
-  );
+  const knee = keypoints.find((k) => k.name === "left_knee" || k.part === "left_knee");
   const ankle = keypoints.find(
     (k) => k.name === "left_ankle" || k.part === "left_ankle"
   );
@@ -129,6 +134,11 @@ function evaluatePose(keypoints) {
   if (!hip || !knee || !ankle || hip.score < 0.3 || knee.score < 0.3 || ankle.score < 0.3) {
     angleEl.textContent = "--";
     qualityEl.textContent = "偵測中…";
+    stableStart = null;
+    stableSeconds = 0;
+    stableEl.textContent = "0.0";
+    completionEl.textContent = "0";
+    completionBar.style.width = "0%";
     return;
   }
 
@@ -139,19 +149,52 @@ function evaluatePose(keypoints) {
   const ang = Math.round(angleBetween(a, b, c));
   angleEl.textContent = ang;
 
+  // 定義「好姿勢」的角度範圍（可以依照你要的動作調整）
+  // 這裡假設：130°～160° 是「不錯的半蹲」
   let quality = "";
+  let isGoodPose = false;
+
   if (ang > 160) {
     quality = "站太直";
   } else if (ang > 130) {
     quality = "不錯的半蹲";
-    score += 1;
+    isGoodPose = true;
   } else {
     quality = "蹲很多，很認真！";
-    score += 2;
+    isGoodPose = true;
   }
 
   qualityEl.textContent = quality;
-  scoreEl.textContent = score;
+
+  const now = performance.now();
+
+  if (isGoodPose) {
+    // 開始或延續穩定姿勢
+    if (stableStart === null) {
+      stableStart = now;
+    }
+    stableSeconds = (now - stableStart) / 1000;
+    // 穩定時每幀都加一點分數
+    score += 0.2;
+  } else {
+    // 姿勢一跑掉就歸零
+    stableStart = null;
+    stableSeconds = 0;
+  }
+
+  // 更新 HUD：穩定秒數
+  stableEl.textContent = stableSeconds.toFixed(1);
+
+  // 完成度：穩定時間 / 目標秒數（最多 100%）
+  const completion = Math.max(
+    0,
+    Math.min(100, Math.round((stableSeconds / TARGET_STABLE_SECONDS) * 100))
+  );
+  completionEl.textContent = completion;
+  completionBar.style.width = `${completion}%`;
+
+  // 更新分數（取整數看起來比較像遊戲）
+  scoreEl.textContent = Math.floor(score);
 }
 
 async function poseLoop() {
