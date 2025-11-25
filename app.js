@@ -36,6 +36,14 @@ const adjacentPairs = [
   ["right_shoulder", "nose"],
 ];
 
+// 類似裝甲板的三角區塊（用線描出來）
+const trianglePlates = [
+  ["left_shoulder", "right_shoulder", "left_hip"],
+  ["right_shoulder", "left_hip", "right_hip"],
+  ["left_hip", "right_hip", "left_knee"],
+  ["right_hip", "left_knee", "right_knee"],
+];
+
 // 算三點夾角（中間那點是關節）
 function angleBetween(a, b, c) {
   const ab = { x: a.x - b.x, y: a.y - b.y };
@@ -65,7 +73,7 @@ let score = 0;
 
 // 用來記錄「保持好姿勢」的時間
 let stableStart = null; // 開始穩定的時刻 (ms)
-let stableSeconds = 0;  // 累積穩定秒數
+let stableSeconds = 0; // 累積穩定秒數
 
 // 要保持幾秒視為 100% 完成
 const TARGET_STABLE_SECONDS = 10;
@@ -114,11 +122,19 @@ function drawKeypoints(keypoints) {
     return { x, y };
   }
 
-  // 先畫骨架線
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "#38bdf8"; // 科技藍線
-  ctx.beginPath();
+  // =========================
+  // 1. 霓虹骨架主線
+  // =========================
+  ctx.save();
+  ctx.lineWidth = 5;
+  const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  grad.addColorStop(0, "#fb7185"); // 粉紅
+  grad.addColorStop(1, "#22d3ee"); // 藍綠
+  ctx.strokeStyle = grad;
+  ctx.shadowColor = "rgba(56, 189, 248, 0.7)";
+  ctx.shadowBlur = 16;
 
+  ctx.beginPath();
   adjacentPairs.forEach(([aName, bName]) => {
     const a = keypoints.find((k) => k.name === aName || k.part === aName);
     const b = keypoints.find((k) => k.name === bName || k.part === bName);
@@ -126,14 +142,44 @@ function drawKeypoints(keypoints) {
 
     const sa = screenXY(a);
     const sb = screenXY(b);
-
     ctx.moveTo(sa.x, sa.y);
     ctx.lineTo(sb.x, sb.y);
   });
-
   ctx.stroke();
+  ctx.restore();
 
-  // 再畫關節節點（重要的有光暈）
+  // =========================
+  // 2. 三角裝甲板線條
+  // =========================
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.9)";
+  ctx.shadowColor = "rgba(148, 163, 184, 0.6)";
+  ctx.shadowBlur = 10;
+
+  trianglePlates.forEach(([p1, p2, p3]) => {
+    const a = keypoints.find((k) => k.name === p1 || k.part === p1);
+    const b = keypoints.find((k) => k.name === p2 || k.part === p2);
+    const c = keypoints.find((k) => k.name === p3 || k.part === p3);
+    if (!a || !b || !c || a.score < 0.4 || b.score < 0.4 || c.score < 0.4)
+      return;
+
+    const sa = screenXY(a);
+    const sb = screenXY(b);
+    const sc = screenXY(c);
+
+    ctx.beginPath();
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+    ctx.lineTo(sc.x, sc.y);
+    ctx.closePath();
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  // =========================
+  // 3. 關節節點（外圈光暈 + 內圈實心圓）
+  // =========================
   keypoints.forEach((kp) => {
     if (kp.score < 0.4) return;
 
@@ -142,18 +188,26 @@ function drawKeypoints(keypoints) {
     const isImportant = importantJoints.includes(jointName);
 
     // 外圈光暈
-    if (isImportant) {
-      ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
-      ctx.beginPath();
-      ctx.arc(x, y, 10, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 內部小點
-    ctx.fillStyle = isImportant ? "#38bdf8" : "#f97316";
+    ctx.save();
+    ctx.fillStyle = isImportant
+      ? "rgba(248, 250, 252, 0.2)"
+      : "rgba(248, 250, 252, 0.1)";
+    ctx.shadowColor = isImportant
+      ? "rgba(251, 113, 133, 0.9)"
+      : "rgba(56, 189, 248, 0.7)";
+    ctx.shadowBlur = isImportant ? 18 : 12;
     ctx.beginPath();
-    ctx.arc(x, y, isImportant ? 4 : 3, 0, Math.PI * 2);
+    ctx.arc(x, y, isImportant ? 11 : 8, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+
+    // 內部實心圓
+    ctx.save();
+    ctx.fillStyle = isImportant ? "#e5e7eb" : "#38bdf8";
+    ctx.beginPath();
+    ctx.arc(x, y, isImportant ? 5 : 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   });
 }
 
@@ -201,23 +255,18 @@ function evaluatePose(keypoints) {
   const now = performance.now();
 
   if (isGoodPose) {
-    // 開始或延續穩定姿勢
     if (stableStart === null) {
       stableStart = now;
     }
     stableSeconds = (now - stableStart) / 1000;
-    // 穩定時每幀加一點分數
-    score += 0.2;
+    score += 0.2; // 穩定時緩慢加分
   } else {
-    // 姿勢一跑掉就歸零
     stableStart = null;
     stableSeconds = 0;
   }
 
-  // 更新 HUD：穩定秒數
   stableEl.textContent = stableSeconds.toFixed(1);
 
-  // 完成度：穩定時間 / 目標秒數（最多 100%）
   const completion = Math.max(
     0,
     Math.min(100, Math.round((stableSeconds / TARGET_STABLE_SECONDS) * 100))
@@ -225,7 +274,6 @@ function evaluatePose(keypoints) {
   completionEl.textContent = completion;
   completionBar.style.width = `${completion}%`;
 
-  // 更新分數（整數看起來比較像遊戲）
   scoreEl.textContent = Math.floor(score);
 }
 
