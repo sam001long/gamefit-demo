@@ -98,17 +98,29 @@ function drawKeypoints(keypoints) {
 
   // 簡易骨架（只畫部分線段）
   const adjacentPairs = [
-    ["left_shoulder", "left_elbow"],
-    ["left_elbow", "left_wrist"],
-    ["right_shoulder", "right_elbow"],
-    ["right_elbow", "right_wrist"],
-    ["left_hip", "left_knee"],
-    ["left_knee", "left_ankle"],
-    ["right_hip", "right_knee"],
-    ["right_knee", "right_ankle"],
-    ["left_shoulder", "right_shoulder"],
-    ["left_hip", "right_hip"],
-  ];
+  // 上半身
+  ["left_shoulder", "right_shoulder"],
+  ["left_shoulder", "left_elbow"],
+  ["left_elbow", "left_wrist"],
+  ["right_shoulder", "right_elbow"],
+  ["right_elbow", "right_wrist"],
+
+  // 軀幹
+  ["left_shoulder", "left_hip"],
+  ["right_shoulder", "right_hip"],
+  ["left_hip", "right_hip"],
+
+  // 下半身
+  ["left_hip", "left_knee"],
+  ["left_knee", "left_ankle"],
+  ["right_hip", "right_knee"],
+  ["right_knee", "right_ankle"],
+
+  // 頭部（視模型有沒有這些 keypoint 名稱）
+  ["left_shoulder", "nose"],
+  ["right_shoulder", "nose"],
+];
+
 
   function find(name) {
     return keypoints.find((k) => k.name === name || k.part === name);
