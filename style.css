@@ -36,16 +36,24 @@ h1 {
 }
 
 /* 影片 + 骨架 疊在一起 */
-#video,
+#video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;           /* 黑底給影片用，畫面沒訊號時才不會一片亂 */
+}
+
 #overlay {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  /* 用 contain 避免比例跑掉，讓骨架更容易對齊人 */
   object-fit: contain;
-  background: #000;
+  background: transparent;    /* 透明，讓下面的 video 看得到 */
 }
+
 
 #hud {
   margin-top: 12px;
