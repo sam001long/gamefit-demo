@@ -66,11 +66,18 @@ async function loadModel() {
 }
 
 function resizeCanvas() {
-  const rect = video.getBoundingClientRect();
-  canvas.width = rect.width * window.devicePixelRatio;
-  canvas.height = rect.height * window.devicePixelRatio;
-  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+  // 如果影片還沒準備好，就先給一個預設值
+  const vw = video.videoWidth || 360;
+  const vh = video.videoHeight || 640;
+
+  // canvas 的「內部解析度」直接跟影片一樣
+  canvas.width = vw;
+  canvas.height = vh;
+
+  // 讓座標系統回到 1:1（不要再用 devicePixelRatio 放大）
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
+
 
 function drawKeypoints(keypoints) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
