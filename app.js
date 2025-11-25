@@ -97,29 +97,66 @@ function drawKeypoints(keypoints) {
   });
 
   // 簡易骨架（只畫部分線段）
-  const adjacentPairs = [
-  // 上半身
-  ["left_shoulder", "right_shoulder"],
-  ["left_shoulder", "left_elbow"],
-  ["left_elbow", "left_wrist"],
-  ["right_shoulder", "right_elbow"],
-  ["right_elbow", "right_wrist"],
-
-  // 軀幹
-  ["left_shoulder", "left_hip"],
-  ["right_shoulder", "right_hip"],
-  ["left_hip", "right_hip"],
-
-  // 下半身
-  ["left_hip", "left_knee"],
-  ["left_knee", "left_ankle"],
-  ["right_hip", "right_knee"],
-  ["right_knee", "right_ankle"],
-
-  // 頭部（視模型有沒有這些 keypoint 名稱）
-  ["left_shoulder", "nose"],
-  ["right_shoulder", "nose"],
+  const importantJoints = [
+  "left_shoulder",
+  "right_shoulder",
+  "left_hip",
+  "right_hip",
+  "left_knee",
+  "right_knee",
+  "left_ankle",
+  "right_ankle",
+  "nose",
 ];
+
+function drawKeypoints(keypoints) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  function screenXY(kp) {
+    return {
+      x: (kp.x / video.videoWidth) * canvas.width,
+      y: (kp.y / video.videoHeight) * canvas.height,
+    };
+  }
+
+  // 先畫骨架線
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#38bdf8";
+  ctx.beginPath();
+  adjacentPairs.forEach(([aName, bName]) => {
+    const a = keypoints.find((k) => k.name === aName || k.part === aName);
+    const b = keypoints.find((k) => k.name === bName || k.part === bName);
+    if (!a || !b || a.score < 0.3 || b.score < 0.3) return;
+    const sa = screenXY(a);
+    const sb = screenXY(b);
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+  });
+  ctx.stroke();
+
+  // 再畫節點
+  keypoints.forEach((kp) => {
+    if (kp.score < 0.3) return;
+    const { x, y } = screenXY(kp);
+
+    const isImportant =
+      importantJoints.includes(kp.name) || importantJoints.includes(kp.part);
+
+    // 外圈光暈
+    if (isImportant) {
+      ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 內部核心點
+    ctx.fillStyle = isImportant ? "#38bdf8" : "#f97316";
+    ctx.beginPath();
+    ctx.arc(x, y, isImportant ? 4 : 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
 
 
   function find(name) {
