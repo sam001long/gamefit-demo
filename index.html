@@ -19,27 +19,24 @@
     <h1>GameFit Pose Demo</h1>
 
     <div id="video-container">
-      <!-- 實際畫面 -->
       <video id="video" playsinline></video>
-      <!-- 骨架疊在上面 -->
       <canvas id="overlay"></canvas>
     </div>
 
-    <!-- 簡單「遊戲 HUD」 -->
-<div id="hud">
-  <div>左膝角度：<span id="angle">--</span>°</div>
-  <div>姿勢評分：<span id="quality">--</span></div>
-  <div>穩定時間：<span id="stable">0.0</span>s</div>
-  <div>完成度：<span id="completion">0</span>%</div>
-  <div class="bar">
-    <div id="completion-bar"></div>
-  </div>
-  <div>得分：<span id="score">0</span></div>
-</div>
-
+    <!-- 小小 GameFit HUD -->
+    <div id="hud">
+      <div>左膝角度：<span id="angle">--</span>°</div>
+      <div>姿勢評分：<span id="quality">--</span></div>
+      <div>穩定時間：<span id="stable">0.0</span>s</div>
+      <div>完成度：<span id="completion">0</span>%</div>
+      <div class="bar">
+        <div id="completion-bar"></div>
+      </div>
+      <div>得分：<span id="score">0</span></div>
+    </div>
 
     <p class="tip">
-      用 iPhone 打開，退後一點，把全身入鏡，試著做半蹲或瑜珈姿勢看看。
+      建議用 iPhone Safari 打開，退後一點讓全身入鏡，試著做半蹲或瑜珈站姿看看。
     </p>
   </div>
 
