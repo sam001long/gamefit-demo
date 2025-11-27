@@ -7,37 +7,29 @@
 
   <link rel="stylesheet" href="style.css" />
 
-  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <!-- Pose Detection（包含 MoveNet） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
-  <!-- MediaPipe Pose（給 TFJS 用的後端） -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
 </head>
 <body>
   <div id="app">
-    <h1>GameFit Pose Demo</h1>
+    <h1>GameFit Demo</h1>
 
     <div id="video-container">
       <video id="video" playsinline></video>
       <canvas id="overlay"></canvas>
     </div>
 
-    <!-- GameFit HUD -->
     <div id="hud">
       <div>左膝角度：<span id="angle">--</span>°</div>
       <div>姿勢評分：<span id="quality">--</span></div>
       <div>穩定時間：<span id="stable">0.0</span>s</div>
       <div>完成度：<span id="completion">0</span>%</div>
-      <div class="bar">
-        <div id="completion-bar"></div>
-      </div>
+      <div class="bar"><div id="completion-bar"></div></div>
       <div>得分：<span id="score">0</span></div>
     </div>
 
-    <p class="tip">
-      建議用 iPhone Safari 打開，退後一點讓全身入鏡，試著做半蹲或瑜珈站姿看看。
-    </p>
+    <p class="tip">請退後一點，讓全身入鏡。</p>
   </div>
 
   <script src="app.js"></script>
