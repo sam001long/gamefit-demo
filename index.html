@@ -7,13 +7,23 @@
 
   <link rel="stylesheet" href="style.css" />
 
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <!-- Pose Detection（MoveNet） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <!-- MediaPipe Pose backend -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
 </head>
 <body>
   <div id="app">
     <h1>GameFit Demo</h1>
+
+    <!-- 模式切換按鈕 -->
+    <div id="controls">
+      <button data-mode="free" class="active">自由練習</button>
+      <button data-mode="yoga">關卡1 瑜珈平衡</button>
+      <button data-mode="squat">關卡2 深蹲挑戰</button>
+    </div>
 
     <div id="video-container">
       <video id="video" playsinline></video>
@@ -21,15 +31,18 @@
     </div>
 
     <div id="hud">
+      <div>模式：<span id="mode-label">自由練習</span></div>
       <div>左膝角度：<span id="angle">--</span>°</div>
-      <div>姿勢評分：<span id="quality">--</span></div>
+      <div>狀態說明：<span id="quality">--</span></div>
       <div>穩定時間：<span id="stable">0.0</span>s</div>
       <div>完成度：<span id="completion">0</span>%</div>
       <div class="bar"><div id="completion-bar"></div></div>
-      <div>得分：<span id="score">0</span></div>
+      <div>得分 / 次數：<span id="score">0</span></div>
     </div>
 
-    <p class="tip">請退後一點，讓全身入鏡。</p>
+    <p class="tip">
+      建議用 iPhone Safari 打開，手機固定，退後一點讓全身入鏡。
+    </p>
   </div>
 
   <script src="app.js"></script>
