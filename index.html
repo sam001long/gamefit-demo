@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit Pose Demo</title>
+  <title>GameFit 全身運動 Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <link rel="stylesheet" href="style.css" />
@@ -16,13 +16,13 @@
 </head>
 <body>
   <div id="app">
-    <h1>GameFit Demo</h1>
+    <h1>GameFit 全身運動 Demo</h1>
 
-    <!-- 模式切換按鈕列 -->
+    <!-- 模式切換：三個關卡 -->
     <div id="controls">
-      <button data-mode="body" class="active">全身模式</button>
-      <button data-mode="hand">手勢模式</button>
-      <button data-mode="face">臉部模式</button>
+      <button data-mode="free"  class="active">自由練習</button>
+      <button data-mode="yoga">關卡1 瑜珈平衡</button>
+      <button data-mode="squat">關卡2 深蹲挑戰</button>
     </div>
 
     <div id="video-container">
@@ -36,18 +36,18 @@
       <div id="hud">
         <div class="row">
           <span class="label">模式：</span>
-          <span id="mode-label" class="value">全身模式</span>
+          <span id="mode-label" class="value">自由練習</span>
         </div>
 
         <div class="row">
-          <span class="label">主數值：</span>
+          <span class="label">左膝角度：</span>
           <span id="angle" class="value">--</span>
-          <span id="angle-unit" class="unit">°</span>
+          <span class="unit">°</span>
         </div>
 
         <div class="row">
           <span class="label">狀態：</span>
-          <span id="quality" class="value">請退後一點，讓全身入鏡</span>
+          <span id="quality" class="value">請退後一點，讓下半身入鏡</span>
         </div>
 
         <div class="row small">
@@ -57,6 +57,8 @@
           <span id="completion" class="value">0</span><span class="unit">%</span>
           <span class="label">分數：</span>
           <span id="score" class="value">0</span>
+          <span class="label" id="reps-label" style="margin-left:4px;display:none;">次數：</span>
+          <span id="reps" class="value" style="display:none;">0</span>
         </div>
 
         <div class="bar">
@@ -66,7 +68,10 @@
     </div>
 
     <p class="tip">
-      建議用 iPhone Safari 打開，手機固定，退後一點讓上半身或全身入鏡。
+      建議用 iPhone Safari 打開，手機固定，退後一點讓下半身入鏡。<br>
+      自由練習：看角度變化。<br>
+      關卡1：單腳或半蹲維持穩定。<br>
+      關卡2：做深蹲挑戰次數。
     </p>
   </div>
 
