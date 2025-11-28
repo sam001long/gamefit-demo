@@ -7,7 +7,7 @@
 
   <link rel="stylesheet" href="hand.css" />
 
-  <!-- TensorFlow.js（runtime 使用 mediapipe，其實不一定需要，但留著沒關係） -->
+  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <!-- Hand Pose Detection -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
@@ -22,7 +22,8 @@
       <video id="video" playsinline></video>
       <canvas id="overlay"></canvas>
 
-      <button id="switchCamBtn">切換鏡頭</button>
+      <!-- 先不做切換鏡頭，避免 bug -->
+      <!-- <button id="switchCamBtn">切換鏡頭</button> -->
 
       <div id="hud">
         <div class="row">
@@ -44,9 +45,9 @@
     </div>
 
     <p class="tip">
-      建議用 iPhone Safari 開啟這個 hand.html。<br>
-      先按「允許」相機權限。<br>
-      把一隻手放在畫面中央、手心朝向鏡頭，距離約 30–60 公分，試試比：石頭 / 剪刀 / 布。
+      建議用 iPhone Safari 開啟 hand.html。<br>
+      按「允許」相機權限。<br>
+      把一隻手放在畫面中央、手心朝向鏡頭，距離約 30–60 公分，試試比出：石頭 / 剪刀 / 布。
     </p>
   </div>
 
