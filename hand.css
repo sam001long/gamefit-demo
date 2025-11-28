@@ -56,6 +56,22 @@ h1 {
   background: transparent;
 }
 
+/* 切換鏡頭按鈕 */
+#switchCamBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #e5e7eb;
+  border: 1px solid #38bdf8;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  z-index: 20;
+}
+
 /* HUD 疊在畫面下方 */
 #hud {
   position: absolute;
