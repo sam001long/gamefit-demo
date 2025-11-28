@@ -101,6 +101,7 @@ function resetStateForMode() {
   if (currentMode === "body") {
     modeLabelEl.textContent = "全身模式";
     angleUnitEl.textContent = "°";
+    angleEl.textContent = "--";
     qualityEl.textContent = "試著做半蹲或站姿，看看角度與穩定度。";
   } else if (currentMode === "hand") {
     modeLabelEl.textContent = "手勢模式";
@@ -116,27 +117,12 @@ function resetStateForMode() {
 }
 
 // --------------------
-// 相機與鏡像控制
+// 相機（前 / 後鏡頭切換）
 // --------------------
-
-// 依照 currentFacing 套用 / 取消鏡像（前鏡頭鏡像）
-function applyMirror() {
-  const mirror = currentFacing === "user";
-
-  [video, canvas].forEach((el) => {
-    if (!el) return;
-    if (mirror) {
-      el.classList.add("mirror");
-    } else {
-      el.classList.remove("mirror");
-    }
-  });
-}
-
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: currentFacing },
-    audio: false,
+    audio: false
   });
   video.srcObject = stream;
   return new Promise((resolve) => {
@@ -149,25 +135,19 @@ async function setupCamera() {
 
 async function switchCamera() {
   currentFacing = currentFacing === "environment" ? "user" : "environment";
-  // 記住使用者選擇，下次重開頁面沿用
-  try {
-    localStorage.setItem("gamefitFacing", currentFacing);
-  } catch (e) {
-    // 忽略 localStorage 錯誤
-  }
 
   if (video.srcObject) {
     video.srcObject.getTracks().forEach((t) => t.stop());
   }
+
   await setupCamera();
   resizeCanvas();
-  applyMirror();
 }
 
 switchCamBtn.addEventListener("click", () => {
   switchCamera().catch((err) => {
     console.error(err);
-    alert("切換鏡頭失敗，請檢查權限設定。");
+    alert("切換鏡頭失敗，請確認瀏覽器有相機權限。");
   });
 });
 
@@ -184,9 +164,13 @@ function resizeCanvas() {
 function drawKeypoints(keypoints) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  if (!video.videoWidth || !video.videoHeight) {
+    return; // 還沒拿到畫面尺寸時先跳過
+  }
+
   const toScreen = (kp) => ({
     x: (kp.x / video.videoWidth) * canvas.width,
-    y: (kp.y / video.videoHeight) * canvas.height,
+    y: (kp.y / video.videoHeight) * canvas.height
   });
 
   // 骨架線
@@ -200,7 +184,7 @@ function drawKeypoints(keypoints) {
   adjacentPairs.forEach(([aName, bName]) => {
     const a = keypoints.find((k) => k.name === aName || k.part === aName);
     const b = keypoints.find((k) => k.name === bName || k.part === bName);
-    if (!a || !b || a.score < 0.4 || b.score < 0.4) return;
+    if (!a || !b || a.score < 0.3 || b.score < 0.3) return;
 
     const sa = toScreen(a);
     const sb = toScreen(b);
@@ -213,7 +197,7 @@ function drawKeypoints(keypoints) {
 
   // 關節點
   keypoints.forEach((kp) => {
-    if (kp.score < 0.4) return;
+    if (kp.score < 0.3) return;
     const { x, y } = toScreen(kp);
     const name = kp.name || kp.part;
     const important = importantJoints.includes(name);
@@ -253,7 +237,7 @@ function evaluatePose(keypoints) {
   }
 }
 
-// 全身模式：類似半蹲穩定度
+// 全身模式：半蹲穩定度
 function handleBodyMode(kp) {
   const hip = kp.find((k) => k.name === "left_hip" || k.part === "left_hip");
   const knee = kp.find((k) => k.name === "left_knee" || k.part === "left_knee");
@@ -265,9 +249,9 @@ function handleBodyMode(kp) {
     !hip ||
     !knee ||
     !ankle ||
-    hip.score < 0.4 ||
-    knee.score < 0.4 ||
-    ankle.score < 0.4
+    hip.score < 0.3 ||
+    knee.score < 0.3 ||
+    ankle.score < 0.3
   ) {
     angleEl.textContent = "--";
     qualityEl.textContent = "偵測中，請退後一點讓下半身入鏡。";
@@ -317,7 +301,7 @@ function handleBodyMode(kp) {
   scoreEl.textContent = Math.floor(score);
 }
 
-// 手勢模式：利用手腕與肩膀
+// 手勢模式：用手腕與肩膀高度
 function handleHandMode(kp) {
   const leftShoulder = kp.find(
     (k) => k.name === "left_shoulder" || k.part === "left_shoulder"
@@ -337,10 +321,10 @@ function handleHandMode(kp) {
     !rightShoulder ||
     !leftWrist ||
     !rightWrist ||
-    leftShoulder.score < 0.4 ||
-    rightShoulder.score < 0.4 ||
-    leftWrist.score < 0.4 ||
-    rightWrist.score < 0.4
+    leftShoulder.score < 0.3 ||
+    rightShoulder.score < 0.3 ||
+    leftWrist.score < 0.3 ||
+    rightWrist.score < 0.3
   ) {
     qualityEl.textContent = "請讓上半身與雙手入鏡。";
     angleEl.textContent = "--";
@@ -364,7 +348,7 @@ function handleHandMode(kp) {
     statusText = "請舉起一隻或雙手。";
   }
 
-  // 左右揮動（用雙手中心 vs 肩膀中心）
+  // 左右偏移（用雙手中心 vs 肩膀中心）
   const centerX = (leftWrist.x + rightWrist.x) / 2;
   const shouldersCenterX = (leftShoulder.x + rightShoulder.x) / 2;
   const delta = centerX - shouldersCenterX;
@@ -410,9 +394,9 @@ function handleFaceMode(kp) {
     !nose ||
     !leftShoulder ||
     !rightShoulder ||
-    nose.score < 0.4 ||
-    leftShoulder.score < 0.4 ||
-    rightShoulder.score < 0.4
+    nose.score < 0.3 ||
+    leftShoulder.score < 0.3 ||
+    rightShoulder.score < 0.3
   ) {
     qualityEl.textContent = "請把上半身與頭部正面對著鏡頭。";
     angleEl.textContent = "--";
@@ -437,7 +421,7 @@ function handleFaceMode(kp) {
   else if (dy > 20) pitchText = "低頭";
   else pitchText = "高度正常";
 
-  qualityEl.textContent = `${yawText}，${pitchText}。`;
+  qualityEl.textContent = yawText + "，" + pitchText + "。";
 
   const dist = Math.sqrt(dx * dx + dy * dy);
   const poseScore = Math.max(0, 100 - Math.round((dist / 80) * 100));
@@ -467,7 +451,15 @@ function handleFaceMode(kp) {
 async function poseLoop() {
   if (!detector) return;
 
-  const poses = await detector.estimatePoses(video, { maxPoses: 1 });
+  let poses;
+  try {
+    poses = await detector.estimatePoses(video, { maxPoses: 1 });
+  } catch (e) {
+    console.error("estimatePoses error:", e);
+    requestAnimationFrame(poseLoop);
+    return;
+  }
+
   if (poses && poses.length > 0) {
     const kp = poses[0].keypoints;
     drawKeypoints(kp);
@@ -489,31 +481,24 @@ async function main() {
     return;
   }
 
-  // 讀取上次使用的鏡頭設定
-  try {
-    const saved = localStorage.getItem("gamefitFacing");
-    if (saved === "user" || saved === "environment") {
-      currentFacing = saved;
-    }
-  } catch (e) {
-    // 忽略 localStorage 錯誤
-  }
-
   resetStateForMode();
 
   await setupCamera();
   resizeCanvas();
-  applyMirror();
-  window.addEventListener("resize", () => {
-    resizeCanvas();
-  });
+  window.addEventListener("resize", resizeCanvas);
 
-  detector = await poseDetection.createDetector(
-    poseDetection.SupportedModels.MoveNet,
-    {
-      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
-    }
-  );
+  try {
+    detector = await poseDetection.createDetector(
+      poseDetection.SupportedModels.MoveNet,
+      {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+      }
+    );
+  } catch (e) {
+    console.error("createDetector error:", e);
+    alert("建立姿勢偵測器失敗，請檢查網路或稍後再試。");
+    return;
+  }
 
   poseLoop();
 }
