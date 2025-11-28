@@ -69,8 +69,6 @@ h1 {
   height: 100%;
   object-fit: contain;
   background: #000;
-  transform: scaleX(1);
-  transform-origin: center center;
 }
 
 /* 骨架 overlay */
@@ -81,14 +79,6 @@ h1 {
   height: 100%;
   object-fit: contain;
   background: transparent;
-  transform: scaleX(1);
-  transform-origin: center center;
-}
-
-/* 前鏡頭時鏡像（自拍看起來像照鏡子） */
-#video.mirror,
-#overlay.mirror {
-  transform: scaleX(-1);
 }
 
 /* 切換鏡頭按鈕 */
@@ -99,7 +89,7 @@ h1 {
   padding: 5px 8px;
   font-size: 11px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.7);
+  background: rgba(15, 23, 42, 0.8);
   color: #e5e7eb;
   border: 1px solid #38bdf8;
   backdrop-filter: blur(4px);
@@ -175,4 +165,5 @@ h1 {
   font-size: 11px;
   color: #9ca3af;
   text-align: center;
+  line-height: 1.4;
 }
