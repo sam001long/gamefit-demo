@@ -7,13 +7,12 @@ const statusEl = document.getElementById("status");
 const gestureEl = document.getElementById("gesture");
 const confidenceEl = document.getElementById("confidence");
 const confidenceBar = document.getElementById("confidence-bar");
-const switchCamBtn = document.getElementById("switchCamBtn");
 
 // ------------- 全域狀態 -------------
 let detector = null;
-let currentFacing = "user"; // 手勢 demo 預設用前鏡頭
 let running = true;
 
+// 手指骨架鏈
 const fingerChains = [
   [0, 1, 2, 3, 4],    // thumb
   [0, 5, 6, 7, 8],    // index
@@ -22,6 +21,7 @@ const fingerChains = [
   [0, 17, 18, 19, 20] // pinky
 ];
 
+// 每根手指的重要點
 const fingerDefs = {
   index:  { tip: 8,  pip: 6 },
   middle: { tip: 12, pip: 10 },
@@ -36,6 +36,7 @@ function distance(a, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+// 判斷四根手指的「伸直 / 彎曲」
 function getFingerStates(hand) {
   const kp = hand.keypoints;
   const wrist = kp[0];
@@ -49,12 +50,14 @@ function getFingerStates(hand) {
     const dTip = distance(tipPt, wrist);
     const dPip = distance(pipPt, wrist);
 
-    const extended = dTip > dPip * 1.25; // 稍微拉高門檻，避免抖動
+    // tip 比 pip 離 wrist 遠很多 → 手指伸直
+    const extended = dTip > dPip * 1.25;
     states[name] = { extended, dTip, dPip };
   }
   return states;
 }
 
+// 用手指狀態推估：石頭 / 剪刀 / 布
 function classifyRPS(states) {
   const idx = states.index.extended;
   const mid = states.middle.extended;
@@ -78,6 +81,7 @@ function classifyRPS(states) {
   return { label: "不確定", raw: "unknown", confidence: 0.3 };
 }
 
+// 畫手部骨架
 function drawHand(hand) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -119,6 +123,7 @@ function drawHand(hand) {
     const { x, y } = toScreen(p);
     const isTip = [4, 8, 12, 16, 20].includes(i);
 
+    // 外光圈
     ctx.save();
     ctx.fillStyle = isTip
       ? "rgba(56,189,248,0.25)"
@@ -130,6 +135,7 @@ function drawHand(hand) {
     ctx.fill();
     ctx.restore();
 
+    // 內圓
     ctx.save();
     ctx.fillStyle = isTip ? "#38bdf8" : "#f97316";
     ctx.beginPath();
@@ -139,40 +145,22 @@ function drawHand(hand) {
   });
 }
 
-// ------------- 相機 -------------
+// ------------- 相機（只用前鏡頭，不切換） -------------
 async function setupCamera() {
-  statusEl.textContent = "啟動相機…";
+  statusEl.textContent = "啟動前鏡頭…";
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: currentFacing },
+    video: { facingMode: "user" },
     audio: false
   });
   video.srcObject = stream;
   return new Promise((resolve) => {
     video.onloadedmetadata = () => {
       video.play();
+      resizeCanvas();
       resolve();
     };
   });
 }
-
-async function switchCamera() {
-  currentFacing = currentFacing === "user" ? "environment" : "user";
-
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
-  }
-
-  await setupCamera();
-  resizeCanvas();
-}
-
-switchCamBtn.addEventListener("click", () => {
-  switchCamera().catch(err => {
-    console.error(err);
-    statusEl.textContent = "切換鏡頭失敗：" + err.message;
-    alert("切換鏡頭失敗，請確認有開啟相機權限。");
-  });
-});
 
 function resizeCanvas() {
   const vw = video.videoWidth || 360;
@@ -187,9 +175,8 @@ async function detectionLoop() {
 
   let hands = [];
   try {
-    hands = await detector.estimateHands(video, {
-      flipHorizontal: currentFacing === "user"
-    });
+    // 不使用 flipHorizontal，先確保骨架疊在畫面上
+    hands = await detector.estimateHands(video);
   } catch (e) {
     console.error("estimateHands error", e);
     statusEl.textContent = "偵測錯誤：" + e.message;
@@ -232,7 +219,6 @@ async function main() {
   statusEl.textContent = "啟動相機中…";
 
   await setupCamera();
-  resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
   statusEl.textContent = "載入手勢模型中…";
