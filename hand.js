@@ -7,10 +7,12 @@ const statusEl = document.getElementById("status");
 const gestureEl = document.getElementById("gesture");
 const confidenceEl = document.getElementById("confidence");
 const confidenceBar = document.getElementById("confidence-bar");
+const switchCamBtn = document.getElementById("switchCamBtn");
 
 // ------------- 全域狀態 -------------
 let detector = null;
 let running = true;
+let currentFacing = "user"; // 預設前鏡頭
 
 // 手指骨架鏈
 const fingerChains = [
@@ -145,13 +147,17 @@ function drawHand(hand) {
   });
 }
 
-// ------------- 相機（只用前鏡頭，不切換） -------------
+// ------------- 相機（可切換前 / 後鏡頭） -------------
 async function setupCamera() {
-  statusEl.textContent = "啟動前鏡頭…";
+  statusEl.textContent = currentFacing === "user"
+    ? "啟動前鏡頭…"
+    : "啟動後鏡頭…";
+
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" },
+    video: { facingMode: currentFacing },
     audio: false
   });
+
   video.srcObject = stream;
   return new Promise((resolve) => {
     video.onloadedmetadata = () => {
@@ -161,6 +167,26 @@ async function setupCamera() {
     };
   });
 }
+
+async function switchCamera() {
+  currentFacing = currentFacing === "user" ? "environment" : "user";
+
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+  }
+
+  try {
+    await setupCamera();
+  } catch (e) {
+    console.error("switchCamera error", e);
+    statusEl.textContent = "切換鏡頭失敗：" + e.message;
+    alert("切換鏡頭失敗，請確認有開啟相機權限。");
+  }
+}
+
+switchCamBtn.addEventListener("click", () => {
+  switchCamera();
+});
 
 function resizeCanvas() {
   const vw = video.videoWidth || 360;
@@ -175,7 +201,7 @@ async function detectionLoop() {
 
   let hands = [];
   try {
-    // 不使用 flipHorizontal，先確保骨架疊在畫面上
+    // 不使用 flipHorizontal，確保前 / 後鏡頭都一致
     hands = await detector.estimateHands(video);
   } catch (e) {
     console.error("estimateHands error", e);
