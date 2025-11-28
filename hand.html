@@ -2,14 +2,14 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit Hand Gesture Demo</title>
+  <title>GameFit 手勢猜拳 Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <link rel="stylesheet" href="hand.css" />
 
-  <!-- TensorFlow.js -->
+  <!-- TensorFlow.js（runtime 使用 mediapipe，其實不一定需要，但留著沒關係） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <!-- Hand Pose Detection (MediaPipeHands via TFJS) -->
+  <!-- Hand Pose Detection -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
   <!-- MediaPipe Hands backend assets -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
@@ -27,10 +27,10 @@
       <div id="hud">
         <div class="row">
           <span class="label">狀態：</span>
-          <span id="status" class="value">載入模型中…</span>
+          <span id="status" class="value">初始化中…</span>
         </div>
         <div class="row">
-          <span class="label">偵測到手勢：</span>
+          <span class="label">偵測手勢：</span>
           <span id="gesture" class="value big">--</span>
         </div>
         <div class="row small">
@@ -44,9 +44,9 @@
     </div>
 
     <p class="tip">
-      建議用 iPhone Safari<br>
-      將手放在畫面中央約 30–60 公分距離，手心朝向鏡頭。<br>
-      試試看比出「石頭 / 剪刀 / 布」！
+      建議用 iPhone Safari 開啟這個 hand.html。<br>
+      先按「允許」相機權限。<br>
+      把一隻手放在畫面中央、手心朝向鏡頭，距離約 30–60 公分，試試比：石頭 / 剪刀 / 布。
     </p>
   </div>
 
