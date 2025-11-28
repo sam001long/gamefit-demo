@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>GameFit 手部骨架＋猜拳 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- 簡單內嵌 CSS -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #f9fafb;
+      display: flex;
+      justify-content: center;
+      padding: 12px;
+    }
+    #app { max-width: 480px; width: 100%; }
+    h1 { font-size: 18px; text-align: center; margin-bottom: 8px; }
+
+    #video-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid #1f2937;
+    }
+    #video, #overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    #overlay { background: transparent; }
+
+    #hud {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: 6px 8px 8px;
+      background: linear-gradient(
+        to top,
+        rgba(15, 23, 42, 0.95),
+        rgba(15, 23, 42, 0.0)
+      );
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    #hud .row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    #hud .row.small { font-size: 10px; opacity: 0.95; }
+    #hud .label { color: #9ca3af; }
+    #hud .value { font-weight: 600; color: #38bdf8; }
+    #hud .value.big { font-size: 16px; }
+    #hud .unit { font-size: 10px; color: #9ca3af; }
+
+    .bar {
+      margin-top: 2px;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(30, 64, 175, 0.9);
+      overflow: hidden;
+    }
+    #confidence-bar {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #22c55e, #38bdf8);
+      transition: width 0.15s ease-out;
+    }
+
+    .tip {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+
+  <!-- TFJS + Hand Pose Detection + MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+</head>
+<body>
+  <div id="app">
+    <h1>GameFit 手部骨架＋猜拳 Demo</h1>
+
+    <div id="video-container">
+      <video id="video" playsinline></video>
+      <canvas id="overlay"></canvas>
+
+      <div id="hud">
+        <div class="row">
+          <span class="label">狀態：</span>
+          <span id="status" class="value">初始化中…</span>
+        </div>
+        <div class="row">
+          <span class="label">偵測手勢：</span>
+          <span id="gesture" class="value big">--</span>
+        </div>
+        <div class="row small">
+          <span class="label">信心度：</span>
+          <span id="confidence" class="value">0</span><span class="unit">%</span>
+        </div>
+        <div class="bar">
+          <div id="confidence-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="tip">
+      建議用 iPhone Safari 開啟 hand_demo.html。<br>
+      允許相機權限後，會啟動前鏡頭。<br>
+      把一隻手放在畫面中央、手心朝向鏡頭（距離約 30–60 公分），<br>
+      試著比出：石頭（拳頭）／剪刀（✌）／布（張開五指）。
+    </p>
+  </div>
+
+  <!-- 內嵌 JS -->
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+
+    const statusEl = document.getElementById("status");
+    const gestureEl = document.getElementById("gesture");
+    const confidenceEl = document.getElementById("confidence");
+    const confidenceBar = document.getElementById("confidence-bar");
+
+    let detector = null;
+    let running = true;
+
+    const fingerChains = [
+      [0, 1, 2, 3, 4],    // thumb
+      [0, 5, 6, 7, 8],    // index
+      [0, 9, 10, 11, 12], // middle
+      [0, 13, 14, 15, 16],// ring
+      [0, 17, 18, 19, 20] // pinky
+    ];
+
+    const fingerDefs = {
+      index:  { tip: 8,  pip: 6 },
+      middle: { tip: 12, pip: 10 },
+      ring:   { tip: 16, pip: 14 },
+      pinky:  { tip: 20, pip: 18 }
+    };
+
+    function distance(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function getFingerStates(hand) {
+      const kp = hand.keypoints;
+      const wrist = kp[0];
+      const states = {};
+
+      for (const name of Object.keys(fingerDefs)) {
+        const { tip, pip } = fingerDefs[name];
+        const tipPt = kp[tip];
+        const pipPt = kp[pip];
+
+        const dTip = distance(tipPt, wrist);
+        const dPip = distance(pipPt, wrist);
+
+        const extended = dTip > dPip * 1.25;
+        states[name] = { extended, dTip, dPip };
+      }
+      return states;
+    }
+
+    function classifyRPS(states) {
+      const idx = states.index.extended;
+      const mid = states.middle.extended;
+      const ring = states.ring.extended;
+      const pin = states.pinky.extended;
+
+      const extCount = [idx, mid, ring, pin].filter(Boolean).length;
+
+      if (extCount === 0) {
+        return { label: "石頭", raw: "rock", confidence: 0.9 };
+      }
+
+      if (idx && mid && !ring && !pin) {
+        return { label: "剪刀", raw: "scissors", confidence: 0.9 };
+      }
+
+      if (extCount >= 3) {
+        return { label: "布", raw: "paper", confidence: 0.85 };
+      }
+
+      return { label: "不確定", raw: "unknown", confidence: 0.3 };
+    }
+
+    function resizeCanvas() {
+      const vw = video.videoWidth || 360;
+      const vh = video.videoHeight || 640;
+      canvas.width = vw;
+      canvas.height = vh;
+    }
+
+    function drawHand(hand) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!hand || !hand.keypoints || !video.videoWidth || !video.videoHeight) {
+        return;
+      }
+
+      const kp = hand.keypoints;
+      const toScreen = (p) => ({
+        x: (p.x / video.videoWidth) * canvas.width,
+        y: (p.y / video.videoHeight) * canvas.height
+      });
+
+      // 骨架線
+      ctx.save();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#38bdf8";
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      fingerChains.forEach(chain => {
+        for (let i = 0; i < chain.length - 1; i++) {
+          const a = kp[chain[i]];
+          const b = kp[chain[i + 1]];
+          if (!a || !b) continue;
+          const sa = toScreen(a);
+          const sb = toScreen(b);
+          ctx.moveTo(sa.x, sa.y);
+          ctx.lineTo(sb.x, sb.y);
+        }
+      });
+      ctx.stroke();
+      ctx.restore();
+
+      // 關節點
+      kp.forEach((p, i) => {
+        const { x, y } = toScreen(p);
+        const isTip = [4, 8, 12, 16, 20].includes(i);
+
+        ctx.save();
+        ctx.fillStyle = isTip
+          ? "rgba(56,189,248,0.25)"
+          : "rgba(249,115,22,0.2)";
+        ctx.shadowColor = isTip ? "#38bdf8" : "#f97316";
+        ctx.shadowBlur = isTip ? 14 : 8;
+        ctx.beginPath();
+        ctx.arc(x, y, isTip ? 9 : 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = isTip ? "#38bdf8" : "#f97316";
+        ctx.beginPath();
+        ctx.arc(x, y, isTip ? 4 : 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    async function setupCamera() {
+      statusEl.textContent = "啟動前鏡頭…";
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false
+      });
+      video.srcObject = stream;
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          video.play();
+          resizeCanvas();
+          resolve();
+        };
+      });
+    }
+
+    async function detectionLoop() {
+      if (!detector) return;
+
+      let hands = [];
+      try {
+        // 不做 flipHorizontal，先確保骨架有疊到
+        hands = await detector.estimateHands(video);
+      } catch (e) {
+        console.error("estimateHands error", e);
+        statusEl.textContent = "偵測錯誤：" + e.message;
+      }
+
+      if (!hands || hands.length === 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        statusEl.textContent = "請把一隻手放到畫面中央，手心朝向鏡頭。";
+        gestureEl.textContent = "--";
+        confidenceEl.textContent = "0";
+        confidenceBar.style.width = "0%";
+      } else {
+        const hand = hands[0];
+        drawHand(hand);
+
+        const states = getFingerStates(hand);
+        const result = classifyRPS(states);
+
+        statusEl.textContent = "偵測中（保持手在畫面中央）。";
+        gestureEl.textContent = result.label;
+
+        const confPercent = Math.round(result.confidence * 100);
+        confidenceEl.textContent = confPercent.toString();
+        confidenceBar.style.width = confPercent + "%";
+      }
+
+      setTimeout(() => {
+        if (running) requestAnimationFrame(detectionLoop);
+      }, 60);
+    }
+
+    async function main() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("瀏覽器不支援相機，請改用 iPhone Safari 或新版 Chrome。");
+        statusEl.textContent = "此瀏覽器不支援相機。";
+        return;
+      }
+
+      statusEl.textContent = "啟動相機中…";
+
+      await setupCamera();
+      window.addEventListener("resize", resizeCanvas);
+
+      statusEl.textContent = "載入手勢模型中…";
+
+      try {
+        detector = await handPoseDetection.createDetector(
+          handPoseDetection.SupportedModels.MediaPipeHands,
+          {
+            runtime: "mediapipe",
+            modelType: "lite",
+            maxHands: 1,
+            solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/hands"
+          }
+        );
+      } catch (e) {
+        console.error("createDetector error", e);
+        statusEl.textContent = "載入模型失敗：" + e.message;
+        alert("載入手勢模型失敗，可以稍後再試或換一個網路環境。");
+        return;
+      }
+
+      statusEl.textContent = "請把一隻手放到畫面中央，比出石頭 / 剪刀 / 布。";
+      detectionLoop();
+    }
+
+    main().catch(err => {
+      console.error(err);
+      statusEl.textContent = "初始化失敗：" + err.message;
+      alert("初始化失敗，請稍後再試。");
+    });
+  </script>
+</body>
+</html>
