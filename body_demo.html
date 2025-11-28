@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>GameFit 全身骨架簡易 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- 簡單內嵌 CSS -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #050816;
+      color: #f9fafb;
+      display: flex;
+      justify-content: center;
+      padding: 12px;
+    }
+    #app { max-width: 480px; width: 100%; }
+    h1 { font-size: 18px; text-align: center; margin-bottom: 8px; }
+
+    #video-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 9 / 16;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid #1f2937;
+    }
+    #video, #overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    #overlay { background: transparent; }
+
+    #switchCamBtn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 5px 8px;
+      font-size: 11px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.85);
+      color: #e5e7eb;
+      border: 1px solid #38bdf8;
+      backdrop-filter: blur(4px);
+      cursor: pointer;
+      z-index: 20;
+    }
+
+    #hud {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      padding: 6px 8px 8px;
+      background: linear-gradient(to top,
+        rgba(15, 23, 42, 0.95),
+        rgba(15, 23, 42, 0)
+      );
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    #hud .row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    #hud .label { color: #9ca3af; }
+    #hud .value { font-weight: 600; color: #38bdf8; }
+    #hud .unit { font-size: 10px; color: #9ca3af; }
+    #hud .row.small { font-size: 10px; opacity: 0.95; }
+
+    .tip {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+
+  <!-- TFJS + Pose Detection（只用 tfjs runtime，簡化） -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+</head>
+<body>
+  <div id="app">
+    <h1>GameFit 全身骨架簡易 Demo</h1>
+
+    <div id="video-container">
+      <video id="video" playsinline></video>
+      <canvas id="overlay"></canvas>
+
+      <button id="switchCamBtn">切換鏡頭</button>
+
+      <div id="hud">
+        <div class="row">
+          <span class="label">狀態：</span>
+          <span id="status" class="value">初始化中…</span>
+        </div>
+        <div class="row">
+          <span class="label">左膝角度：</span>
+          <span id="angle" class="value">--</span><span class="unit">°</span>
+        </div>
+        <div class="row small">
+          <span class="label">提示：</span>
+          <span id="hint" class="value">請允許相機權限，並讓下半身入鏡。</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="tip">
+      建議用 iPhone Safari 開啟 body_demo.html。<br>
+      允許相機後，退後一點讓下半身入鏡，會看到藍色骨架線和左膝角度。
+    </p>
+  </div>
+
+  <!-- 內嵌 JS -->
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+
+    const statusEl = document.getElementById("status");
+    const angleEl = document.getElementById("angle");
+    const hintEl = document.getElementById("hint");
+    const switchCamBtn = document.getElementById("switchCamBtn");
+
+    let detector = null;
+    let currentFacing = "environment"; // 後鏡頭優先
+
+    const adjacentPairs = [
+      ["left_shoulder", "right_shoulder"],
+      ["left_shoulder", "left_elbow"],
+      ["left_elbow", "left_wrist"],
+      ["right_shoulder", "right_elbow"],
+      ["right_elbow", "right_wrist"],
+      ["left_shoulder", "left_hip"],
+      ["right_shoulder", "right_hip"],
+      ["left_hip", "right_hip"],
+      ["left_hip", "left_knee"],
+      ["left_knee", "left_ankle"],
+      ["right_hip", "right_knee"],
+      ["right_knee", "right_ankle"],
+      ["left_shoulder", "nose"],
+      ["right_shoulder", "nose"]
+    ];
+
+    function angleBetween(a, b, c) {
+      const ab = { x: a.x - b.x, y: a.y - b.y };
+      const cb = { x: c.x - b.x, y: c.y - b.y };
+      const dot = ab.x * cb.x + ab.y * cb.y;
+      const magAB = Math.sqrt(ab.x * ab.x + ab.y * ab.y);
+      const magCB = Math.sqrt(cb.x * cb.x + cb.y * cb.y);
+      if (!magAB || !magCB) return 0;
+      const cos = dot / (magAB * magCB);
+      const clamped = Math.min(1, Math.max(-1, cos));
+      return (Math.acos(clamped) * 180) / Math.PI;
+    }
+
+    function resizeCanvas() {
+      const vw = video.videoWidth || 360;
+      const vh = video.videoHeight || 640;
+      canvas.width = vw;
+      canvas.height = vh;
+    }
+
+    async function setupCamera() {
+      statusEl.textContent = currentFacing === "environment"
+        ? "啟動後鏡頭…"
+        : "啟動前鏡頭…";
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: currentFacing },
+        audio: false
+      });
+      video.srcObject = stream;
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          video.play();
+          resizeCanvas();
+          resolve();
+        };
+      });
+    }
+
+    async function switchCamera() {
+      currentFacing = currentFacing === "environment" ? "user" : "environment";
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+      }
+      await setupCamera();
+    }
+
+    switchCamBtn.addEventListener("click", () => {
+      switchCamera().catch(err => {
+        console.error(err);
+        statusEl.textContent = "切換鏡頭失敗：" + err.message;
+      });
+    });
+
+    function drawPose(keypoints) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!video.videoWidth || !video.videoHeight) return;
+
+      const toScreen = (kp) => ({
+        x: (kp.x / video.videoWidth) * canvas.width,
+        y: (kp.y / video.videoHeight) * canvas.height
+      });
+
+      // 線
+      ctx.save();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#38bdf8";
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      adjacentPairs.forEach(([aName, bName]) => {
+        const a = keypoints.find(k => k.name === aName || k.part === aName);
+        const b = keypoints.find(k => k.name === bName || k.part === bName);
+        if (!a || !b || a.score < 0.3 || b.score < 0.3) return;
+        const sa = toScreen(a);
+        const sb = toScreen(b);
+        ctx.moveTo(sa.x, sa.y);
+        ctx.lineTo(sb.x, sb.y);
+      });
+      ctx.stroke();
+      ctx.restore();
+
+      // 點
+      keypoints.forEach(kp => {
+        if (kp.score < 0.3) return;
+        const { x, y } = toScreen(kp);
+        ctx.save();
+        ctx.fillStyle = "rgba(56,189,248,0.25)";
+        ctx.shadowColor = "#38bdf8";
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function updateAngleInfo(keypoints) {
+      const hip = keypoints.find(k => k.name === "left_hip" || k.part === "left_hip");
+      const knee = keypoints.find(k => k.name === "left_knee" || k.part === "left_knee");
+      const ankle = keypoints.find(k => k.name === "left_ankle" || k.part === "left_ankle");
+
+      if (!hip || !knee || !ankle ||
+          hip.score < 0.3 || knee.score < 0.3 || ankle.score < 0.3) {
+        angleEl.textContent = "--";
+        hintEl.textContent = "請讓左腳清楚入鏡（退後一點）。";
+        return;
+      }
+
+      const a = { x: hip.x, y: hip.y };
+      const b = { x: knee.x, y: knee.y };
+      const c = { x: ankle.x, y: ankle.y };
+      const ang = Math.round(angleBetween(a, b, c));
+      angleEl.textContent = ang;
+
+      if (ang > 160) {
+        hintEl.textContent = "現在幾乎是站直的姿勢。";
+      } else if (ang > 130) {
+        hintEl.textContent = "這是舒服的半蹲角度。";
+      } else {
+        hintEl.textContent = "深蹲角度很低，請小心膝蓋負擔。";
+      }
+    }
+
+    async function poseLoop() {
+      if (!detector) return;
+      let poses = [];
+      try {
+        poses = await detector.estimatePoses(video, { maxPoses: 1 });
+      } catch (e) {
+        console.error("estimatePoses error", e);
+        statusEl.textContent = "偵測錯誤：" + e.message;
+      }
+
+      if (!poses || poses.length === 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        statusEl.textContent = "找不到人，請退後一點。";
+      } else {
+        statusEl.textContent = "偵測中…";
+        const kp = poses[0].keypoints;
+        drawPose(kp);
+        updateAngleInfo(kp);
+      }
+
+      requestAnimationFrame(poseLoop);
+    }
+
+    async function main() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("瀏覽器不支援相機，請改用 iPhone Safari 或新版 Chrome。");
+        statusEl.textContent = "此瀏覽器不支援相機。";
+        return;
+      }
+
+      await setupCamera();
+
+      statusEl.textContent = "載入姿勢模型中…";
+      try {
+        detector = await poseDetection.createDetector(
+          poseDetection.SupportedModels.MoveNet,
+          {
+            modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+            runtime: "tfjs"
+          }
+        );
+      } catch (e) {
+        console.error("createDetector error", e);
+        statusEl.textContent = "載入模型失敗：" + e.message;
+        alert("載入姿勢模型失敗，可以稍後再試或換一個網路。");
+        return;
+      }
+
+      statusEl.textContent = "請退後一點讓全身入鏡。";
+      poseLoop();
+    }
+
+    main().catch(err => {
+      console.error(err);
+      statusEl.textContent = "初始化失敗：" + err.message;
+      alert("初始化失敗，請稍後再試。");
+    });
+  </script>
+</body>
+</html>
