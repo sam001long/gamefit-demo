@@ -1,11 +1,12 @@
 // --------------------
-// 設定：關節 / 骨架
+// 基本設定：關節與骨架線
 // --------------------
 const importantJoints = [
   "left_shoulder", "right_shoulder",
   "left_hip", "right_hip",
   "left_knee", "right_knee",
   "left_ankle", "right_ankle",
+  "left_wrist", "right_wrist",
   "nose"
 ];
 
@@ -26,7 +27,7 @@ const adjacentPairs = [
   ["right_shoulder", "nose"]
 ];
 
-// 角度工具：計算三點之間的角度（B 為關節）
+// 角度工具（B 為關節）
 function angleBetween(a, b, c) {
   const ab = { x: a.x - b.x, y: a.y - b.y };
   const cb = { x: c.x - b.x, y: c.y - b.y };
@@ -47,92 +48,123 @@ const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
 
 const angleEl = document.getElementById("angle");
+const angleUnitEl = document.getElementById("angle-unit");
 const qualityEl = document.getElementById("quality");
 const scoreEl = document.getElementById("score");
 const stableEl = document.getElementById("stable");
 const completionEl = document.getElementById("completion");
 const completionBar = document.getElementById("completion-bar");
-const modeLabel = document.getElementById("mode-label");
+const modeLabelEl = document.getElementById("mode-label");
 const modeButtons = document.querySelectorAll("#controls button");
+const switchCamBtn = document.getElementById("switchCamBtn");
 
 let detector = null;
 
-// 模式：free / yoga / squat
-let currentMode = "free";
+// 模式：body / hand / face
+let currentMode = "body";
 
-// 通用分數 / 穩定時間
+// 鏡頭方向：environment 後鏡頭、user 前鏡頭
+let currentFacing = "environment";
+
+// 共用狀態
 let score = 0;
 let stableStart = null;
 let stableSeconds = 0;
 
-// 瑜珈關卡目標穩定秒數
-const TARGET_STABLE_SECONDS_YOGA = 5;
-// 自由練習穩定秒數
-const TARGET_STABLE_SECONDS_FREE = 8;
-
-// 深蹲關卡
-let squatState = "idle"; // idle / down
-let squatCount = 0;
-const SQUAT_DOWN_ANGLE = 120; // 膝角度小於這個算「蹲下」
-const SQUAT_UP_ANGLE = 160;   // 回到這個以上算「站起」
+// 全身模式目標穩定秒數
+const TARGET_STABLE_BODY = 8;
 
 // --------------------
 // 模式切換
 // --------------------
-modeButtons.forEach(btn => {
+modeButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
     const mode = btn.getAttribute("data-mode");
     if (!mode || mode === currentMode) return;
-
     currentMode = mode;
-    modeButtons.forEach(b => b.classList.remove("active"));
+    modeButtons.forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-
-    resetGameStateForMode();
+    resetStateForMode();
   });
 });
 
-function resetGameStateForMode() {
-  // 重置共用狀態
+function resetStateForMode() {
   score = 0;
   stableStart = null;
   stableSeconds = 0;
-  squatState = "idle";
-  squatCount = 0;
 
   stableEl.textContent = "0.0";
   completionEl.textContent = "0";
   completionBar.style.width = "0%";
   scoreEl.textContent = "0";
 
-  if (currentMode === "free") {
-    modeLabel.textContent = "自由練習";
-    qualityEl.textContent = "隨意活動，試試看骨架與角度。";
-  } else if (currentMode === "yoga") {
-    modeLabel.textContent = "關卡1 瑜珈平衡";
-    qualityEl.textContent = "請抬起左腳並維持單腳平衡。";
-  } else if (currentMode === "squat") {
-    modeLabel.textContent = "關卡2 深蹲挑戰";
-    qualityEl.textContent = "蹲下再站起算1次，目標3次。";
+  if (currentMode === "body") {
+    modeLabelEl.textContent = "全身模式";
+    angleUnitEl.textContent = "°";
+    qualityEl.textContent = "試著做半蹲或站姿，看看角度與穩定度。";
+  } else if (currentMode === "hand") {
+    modeLabelEl.textContent = "手勢模式";
+    angleUnitEl.textContent = "";
+    angleEl.textContent = "--";
+    qualityEl.textContent = "試著舉手、雙手舉高、左右揮手。";
+  } else if (currentMode === "face") {
+    modeLabelEl.textContent = "臉部模式";
+    angleUnitEl.textContent = "";
+    angleEl.textContent = "--";
+    qualityEl.textContent = "頭轉左/右、抬頭、低頭，看看狀態變化。";
   }
 }
 
 // --------------------
-// 相機與畫布
+// 相機與鏡像控制
 // --------------------
+
+// 依照 currentFacing 套用 / 取消鏡像（前鏡頭鏡像）
+function applyMirror() {
+  const mirror = currentFacing === "user";
+  [video, canvas].forEach((el) => {
+    if (!el) return;
+    el.classList.toggle("mirror", mirror);
+  });
+}
+
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" },
-    audio: false
+    video: { facingMode: currentFacing },
+    audio: false,
   });
   video.srcObject = stream;
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     video.onloadedmetadata = () => {
       video.play();
       resolve();
     };
   });
 }
+
+async function switchCamera() {
+  currentFacing = currentFacing === "environment" ? "user" : "environment";
+  // 記住使用者選擇，下次重開頁面沿用
+  try {
+    localStorage.setItem("gamefitFacing", currentFacing);
+  } catch (e) {
+    // 忽略 localStorage 錯誤
+  }
+
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach((t) => t.stop());
+  }
+  await setupCamera();
+  resizeCanvas();
+  applyMirror();
+}
+
+switchCamBtn.addEventListener("click", () => {
+  switchCamera().catch((err) => {
+    console.error(err);
+    alert("切換鏡頭失敗，請檢查權限設定。");
+  });
+});
 
 function resizeCanvas() {
   const vw = video.videoWidth || 360;
@@ -142,14 +174,14 @@ function resizeCanvas() {
 }
 
 // --------------------
-// 繪製骨架（科技線條 + 光暈節點）
+// 繪製骨架
 // --------------------
 function drawKeypoints(keypoints) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  const toScreen = kp => ({
+  const toScreen = (kp) => ({
     x: (kp.x / video.videoWidth) * canvas.width,
-    y: (kp.y / video.videoHeight) * canvas.height
+    y: (kp.y / video.videoHeight) * canvas.height,
   });
 
   // 骨架線
@@ -161,8 +193,8 @@ function drawKeypoints(keypoints) {
   ctx.beginPath();
 
   adjacentPairs.forEach(([aName, bName]) => {
-    const a = keypoints.find(k => k.name === aName || k.part === aName);
-    const b = keypoints.find(k => k.name === bName || k.part === bName);
+    const a = keypoints.find((k) => k.name === aName || k.part === aName);
+    const b = keypoints.find((k) => k.name === bName || k.part === bName);
     if (!a || !b || a.score < 0.4 || b.score < 0.4) return;
 
     const sa = toScreen(a);
@@ -174,8 +206,8 @@ function drawKeypoints(keypoints) {
   ctx.stroke();
   ctx.restore();
 
-  // 關節節點
-  keypoints.forEach(kp => {
+  // 關節點
+  keypoints.forEach((kp) => {
     if (kp.score < 0.4) return;
     const { x, y } = toScreen(kp);
     const name = kp.name || kp.part;
@@ -207,16 +239,33 @@ function drawKeypoints(keypoints) {
 // 模式邏輯：姿勢判斷
 // --------------------
 function evaluatePose(keypoints) {
-  const hipL = keypoints.find(k => k.name === "left_hip" || k.part === "left_hip");
-  const kneeL = keypoints.find(k => k.name === "left_knee" || k.part === "left_knee");
-  const ankleL = keypoints.find(k => k.name === "left_ankle" || k.part === "left_ankle");
+  if (currentMode === "body") {
+    handleBodyMode(keypoints);
+  } else if (currentMode === "hand") {
+    handleHandMode(keypoints);
+  } else if (currentMode === "face") {
+    handleFaceMode(keypoints);
+  }
+}
 
-  if (!hipL || !kneeL || !ankleL ||
-      hipL.score < 0.4 || kneeL.score < 0.4 || ankleL.score < 0.4) {
+// 全身模式：類似半蹲穩定度
+function handleBodyMode(kp) {
+  const hip = kp.find((k) => k.name === "left_hip" || k.part === "left_hip");
+  const knee = kp.find((k) => k.name === "left_knee" || k.part === "left_knee");
+  const ankle = kp.find(
+    (k) => k.name === "left_ankle" || k.part === "left_ankle"
+  );
+
+  if (
+    !hip ||
+    !knee ||
+    !ankle ||
+    hip.score < 0.4 ||
+    knee.score < 0.4 ||
+    ankle.score < 0.4
+  ) {
     angleEl.textContent = "--";
-    if (currentMode === "free") {
-      qualityEl.textContent = "偵測中，請退後一點讓全身入鏡。";
-    }
+    qualityEl.textContent = "偵測中，請退後一點讓下半身入鏡。";
     stableStart = null;
     stableSeconds = 0;
     stableEl.textContent = "0.0";
@@ -225,34 +274,21 @@ function evaluatePose(keypoints) {
     return;
   }
 
-  const leftKneeAngle = Math.round(
-    angleBetween(
-      { x: hipL.x, y: hipL.y },
-      { x: kneeL.x, y: kneeL.y },
-      { x: ankleL.x, y: ankleL.y }
-    )
-  );
-  angleEl.textContent = leftKneeAngle;
+  const a = { x: hip.x, y: hip.y };
+  const b = { x: knee.x, y: knee.y };
+  const c = { x: ankle.x, y: ankle.y };
 
-  if (currentMode === "free") {
-    handleFreeMode(leftKneeAngle);
-  } else if (currentMode === "yoga") {
-    handleYogaMode(keypoints, leftKneeAngle);
-  } else if (currentMode === "squat") {
-    handleSquatMode(leftKneeAngle);
-  }
-}
+  const ang = Math.round(angleBetween(a, b, c));
+  angleEl.textContent = ang;
 
-// 自由練習模式：原本的半蹲評分邏輯
-function handleFreeMode(angle) {
   let good = false;
-  if (angle > 160) {
+  if (ang > 160) {
     qualityEl.textContent = "站太直，可以試試半蹲。";
-  } else if (angle > 130) {
-    qualityEl.textContent = "不錯的半蹲！";
+  } else if (ang > 130) {
+    qualityEl.textContent = "不錯的半蹲！維持看看。";
     good = true;
   } else {
-    qualityEl.textContent = "蹲很多，很認真！";
+    qualityEl.textContent = "深蹲很強！小心膝蓋。";
     good = true;
   }
 
@@ -269,98 +305,155 @@ function handleFreeMode(angle) {
   stableEl.textContent = stableSeconds.toFixed(1);
   const comp = Math.min(
     100,
-    Math.round((stableSeconds / TARGET_STABLE_SECONDS_FREE) * 100)
+    Math.round((stableSeconds / TARGET_STABLE_BODY) * 100)
   );
   completionEl.textContent = comp;
   completionBar.style.width = comp + "%";
   scoreEl.textContent = Math.floor(score);
 }
 
-// 瑜珈平衡模式：粗略判斷「左腳抬起 + 膝彎曲」並維持
-function handleYogaMode(keypoints, leftKneeAngle) {
-  const kneeR = keypoints.find(k => k.name === "right_knee" || k.part === "right_knee");
-  const ankleL = keypoints.find(k => k.name === "left_ankle" || k.part === "left_ankle");
+// 手勢模式：利用手腕與肩膀
+function handleHandMode(kp) {
+  const leftShoulder = kp.find(
+    (k) => k.name === "left_shoulder" || k.part === "left_shoulder"
+  );
+  const rightShoulder = kp.find(
+    (k) => k.name === "right_shoulder" || k.part === "right_shoulder"
+  );
+  const leftWrist = kp.find(
+    (k) => k.name === "left_wrist" || k.part === "left_wrist"
+  );
+  const rightWrist = kp.find(
+    (k) => k.name === "right_wrist" || k.part === "right_wrist"
+  );
 
-  if (!kneeR || !ankleL || kneeR.score < 0.4 || ankleL.score < 0.4) {
-    qualityEl.textContent = "請面向鏡頭站好，慢慢抬起左腳。";
-    stableStart = null;
-    stableSeconds = 0;
+  if (
+    !leftShoulder ||
+    !rightShoulder ||
+    !leftWrist ||
+    !rightWrist ||
+    leftShoulder.score < 0.4 ||
+    rightShoulder.score < 0.4 ||
+    leftWrist.score < 0.4 ||
+    rightWrist.score < 0.4
+  ) {
+    qualityEl.textContent = "請讓上半身與雙手入鏡。";
+    angleEl.textContent = "--";
     stableEl.textContent = "0.0";
     completionEl.textContent = "0";
     completionBar.style.width = "0%";
     return;
   }
 
-  // Tree Pose 粗略條件：
-  // 1) 左膝有明顯彎曲（角度 < 140）
-  // 2) 左腳踝高度在右膝附近或以上（拍攝角度會有誤差，只做大略）
-  const kneeBent = leftKneeAngle < 140;
-  const footRaised = ankleL.y < kneeR.y + 40; // y 值越小位置越高
+  const leftUp = leftWrist.y < leftShoulder.y - 20;
+  const rightUp = rightWrist.y < rightShoulder.y - 20;
 
-  const good = kneeBent && footRaised;
+  let statusText = "";
+  if (leftUp && rightUp) {
+    statusText = "雙手舉高！像在應援一樣～";
+  } else if (leftUp) {
+    statusText = "左手舉高中。";
+  } else if (rightUp) {
+    statusText = "右手舉高中。";
+  } else {
+    statusText = "請舉起一隻或雙手。";
+  }
+
+  // 左右揮動（用雙手中心 vs 肩膀中心）
+  const centerX = (leftWrist.x + rightWrist.x) / 2;
+  const shouldersCenterX = (leftShoulder.x + rightShoulder.x) / 2;
+  const delta = centerX - shouldersCenterX;
+
+  let dirText = "";
+  if (Math.abs(delta) > 40) {
+    dirText = delta > 0 ? "（整體偏右側）" : "（整體偏左側）";
+  }
+
+  qualityEl.textContent = statusText + dirText;
 
   const now = performance.now();
-  if (good) {
+  if (leftUp && rightUp) {
     if (!stableStart) stableStart = now;
     stableSeconds = (now - stableStart) / 1000;
-    qualityEl.textContent = "平衡中，保持不要晃動…";
+    score += 0.3;
   } else {
     stableStart = null;
     stableSeconds = 0;
-    qualityEl.textContent = "請抬起左腳並維持穩定。";
   }
 
   stableEl.textContent = stableSeconds.toFixed(1);
 
-  const comp = Math.min(
-    100,
-    Math.round((stableSeconds / TARGET_STABLE_SECONDS_YOGA) * 100)
-  );
+  const comp = Math.min(100, Math.round(stableSeconds * 20)); // 0~5 秒 → 0~100
   completionEl.textContent = comp;
   completionBar.style.width = comp + "%";
-
-  if (comp >= 100) {
-    qualityEl.textContent = "平衡達成！CLEAR！";
-    score = 100;
-  } else {
-    score = comp;
-  }
   scoreEl.textContent = Math.floor(score);
+
+  angleEl.textContent = comp; // 主數值顯示完成度
 }
 
-// 深蹲模式：蹲下再站起記 1 次
-function handleSquatMode(angle) {
-  // 重設與深蹲無關的顯示
-  stableEl.textContent = "0.0";
+// 臉部模式：用鼻子相對肩膀位置估頭部方向
+function handleFaceMode(kp) {
+  const nose = kp.find((k) => k.name === "nose" || k.part === "nose");
+  const leftShoulder = kp.find(
+    (k) => k.name === "left_shoulder" || k.part === "left_shoulder"
+  );
+  const rightShoulder = kp.find(
+    (k) => k.name === "right_shoulder" || k.part === "right_shoulder"
+  );
 
-  if (squatState === "idle") {
-    if (angle < SQUAT_DOWN_ANGLE) {
-      squatState = "down";
-      qualityEl.textContent = "已蹲下，準備站起。";
-    } else {
-      qualityEl.textContent = "請蹲下，膝角度變小。";
-    }
-  } else if (squatState === "down") {
-    if (angle > SQUAT_UP_ANGLE) {
-      squatCount += 1;
-      squatState = "idle";
-      qualityEl.textContent = "完成一次深蹲！再來！";
-    } else {
-      qualityEl.textContent = "保持蹲姿，再站起來。";
-    }
+  if (
+    !nose ||
+    !leftShoulder ||
+    !rightShoulder ||
+    nose.score < 0.4 ||
+    leftShoulder.score < 0.4 ||
+    rightShoulder.score < 0.4
+  ) {
+    qualityEl.textContent = "請把上半身與頭部正面對著鏡頭。";
+    angleEl.textContent = "--";
+    stableEl.textContent = "0.0";
+    completionEl.textContent = "0";
+    completionBar.style.width = "0%";
+    return;
   }
 
-  // 目標 3 次，當作 100% 完成
-  const comp = Math.min(100, Math.round((squatCount / 3) * 100));
+  const centerX = (leftShoulder.x + rightShoulder.x) / 2;
+  const centerY = (leftShoulder.y + rightShoulder.y) / 2;
+  const dx = nose.x - centerX;
+  const dy = nose.y - centerY;
+
+  let yawText = "";
+  if (Math.abs(dx) < 20) yawText = "正面";
+  else if (dx > 0) yawText = "頭往右轉";
+  else yawText = "頭往左轉";
+
+  let pitchText = "";
+  if (dy < -20) pitchText = "抬頭";
+  else if (dy > 20) pitchText = "低頭";
+  else pitchText = "高度正常";
+
+  qualityEl.textContent = `${yawText}，${pitchText}。`;
+
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const poseScore = Math.max(0, 100 - Math.round((dist / 80) * 100));
+  angleEl.textContent = poseScore;
+  angleUnitEl.textContent = "分";
+
+  const now = performance.now();
+  const facingFront = Math.abs(dx) < 20 && Math.abs(dy) < 20;
+  if (facingFront) {
+    if (!stableStart) stableStart = now;
+    stableSeconds = (now - stableStart) / 1000;
+  } else {
+    stableStart = null;
+    stableSeconds = 0;
+  }
+
+  stableEl.textContent = stableSeconds.toFixed(1);
+  const comp = Math.min(100, Math.round(stableSeconds * 20)); // 0~5s → 0~100
   completionEl.textContent = comp;
   completionBar.style.width = comp + "%";
-
-  score = squatCount;
-  scoreEl.textContent = squatCount + " 次";
-
-  if (squatCount >= 3) {
-    qualityEl.textContent = "挑戰完成！你很棒！";
-  }
+  scoreEl.textContent = poseScore;
 }
 
 // --------------------
@@ -391,23 +484,36 @@ async function main() {
     return;
   }
 
-  resetGameStateForMode(); // 初始化模式文字
+  // 讀取上次使用的鏡頭設定
+  try {
+    const saved = localStorage.getItem("gamefitFacing");
+    if (saved === "user" || saved === "environment") {
+      currentFacing = saved;
+    }
+  } catch (e) {
+    // 忽略 localStorage 錯誤
+  }
+
+  resetStateForMode();
 
   await setupCamera();
   resizeCanvas();
-  window.addEventListener("resize", resizeCanvas);
+  applyMirror();
+  window.addEventListener("resize", () => {
+    resizeCanvas();
+  });
 
   detector = await poseDetection.createDetector(
     poseDetection.SupportedModels.MoveNet,
     {
-      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
     }
   );
 
   poseLoop();
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error(err);
   alert("初始化失敗，請打開主控台查看錯誤訊息。");
 });
