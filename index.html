@@ -28,16 +28,25 @@
     <div id="video-container">
       <video id="video" playsinline></video>
       <canvas id="overlay"></canvas>
-    </div>
 
-    <div id="hud">
-      <div>模式：<span id="mode-label">自由練習</span></div>
-      <div>左膝角度：<span id="angle">--</span>°</div>
-      <div>狀態說明：<span id="quality">--</span></div>
-      <div>穩定時間：<span id="stable">0.0</span>s</div>
-      <div>完成度：<span id="completion">0</span>%</div>
-      <div class="bar"><div id="completion-bar"></div></div>
-      <div>得分 / 次數：<span id="score">0</span></div>
+      <!-- HUD 疊在畫面下方 -->
+      <div id="hud">
+        <div class="row">
+          <span class="label">模式：</span><span id="mode-label" class="value">自由練習</span>
+        </div>
+        <div class="row">
+          <span class="label">左膝角度：</span><span id="angle" class="value">--</span><span class="unit">°</span>
+        </div>
+        <div class="row">
+          <span class="label">狀態：</span><span id="quality" class="value">--</span>
+        </div>
+        <div class="row small">
+          <span class="label">穩定：</span><span id="stable" class="value">0.0</span><span class="unit">s</span>
+          <span class="label">完成：</span><span id="completion" class="value">0</span><span class="unit">%</span>
+          <span class="label">分數：</span><span id="score" class="value">0</span>
+        </div>
+        <div class="bar"><div id="completion-bar"></div></div>
+      </div>
     </div>
 
     <p class="tip">
