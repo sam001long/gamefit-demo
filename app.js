@@ -122,9 +122,14 @@ function resetStateForMode() {
 // 依照 currentFacing 套用 / 取消鏡像（前鏡頭鏡像）
 function applyMirror() {
   const mirror = currentFacing === "user";
+
   [video, canvas].forEach((el) => {
     if (!el) return;
-    el.classList.toggle("mirror", mirror);
+    if (mirror) {
+      el.classList.add("mirror");
+    } else {
+      el.classList.remove("mirror");
+    }
   });
 }
 
