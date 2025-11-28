@@ -25,7 +25,7 @@ h1 {
   margin-bottom: 6px;
 }
 
-/* 模式按鈕列 */
+/* 模式切換按鈕列 */
 #controls {
   display: flex;
   gap: 4px;
@@ -50,6 +50,7 @@ h1 {
   font-weight: 600;
 }
 
+/* 影片區 */
 #video-container {
   position: relative;
   width: 100%;
@@ -68,9 +69,11 @@ h1 {
   height: 100%;
   object-fit: contain;
   background: #000;
+  transform: scaleX(1);
+  transform-origin: center center;
 }
 
-/* 骨架 overlay：透明疊在上面 */
+/* 骨架 overlay */
 #overlay {
   position: absolute;
   inset: 0;
@@ -78,16 +81,44 @@ h1 {
   height: 100%;
   object-fit: contain;
   background: transparent;
+  transform: scaleX(1);
+  transform-origin: center center;
 }
 
-/* HUD 疊在畫面最下方 */
+/* 前鏡頭時鏡像（自拍看起來像照鏡子） */
+#video.mirror,
+#overlay.mirror {
+  transform: scaleX(-1);
+}
+
+/* 切換鏡頭按鈕 */
+#switchCamBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #e5e7eb;
+  border: 1px solid #38bdf8;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  z-index: 20;
+}
+
+/* 底部 HUD 疊在畫面上 */
 #hud {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 6px 8px;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.0));
+  padding: 6px 8px 8px;
+  background: linear-gradient(
+    to top,
+    rgba(15, 23, 42, 0.95),
+    rgba(15, 23, 42, 0.0)
+  );
   font-size: 11px;
   display: flex;
   flex-direction: column;
@@ -103,7 +134,7 @@ h1 {
 
 #hud .row.small {
   font-size: 10px;
-  opacity: 0.9;
+  opacity: 0.95;
 }
 
 #hud .label {
@@ -120,13 +151,13 @@ h1 {
   color: #9ca3af;
 }
 
-/* 完成度進度條 */
+/* 完成度條 */
 .bar {
-  margin-top: 2px;
+  margin-top: 3px;
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: rgba(30, 64, 175, 0.8);
+  background: rgba(30, 64, 175, 0.9);
   overflow: hidden;
 }
 
