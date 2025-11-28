@@ -1,0 +1,148 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #020617;
+  color: #f9fafb;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+#app {
+  max-width: 480px;
+  width: 100%;
+}
+
+h1 {
+  font-size: 18px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+/* 影片區 */
+#video-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #1f2937;
+}
+
+/* 影片畫面 */
+#video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+/* 手部骨架 overlay */
+#overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+}
+
+/* 切換鏡頭按鈕 */
+#switchCamBtn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  color: #e5e7eb;
+  border: 1px solid #38bdf8;
+  backdrop-filter: blur(4px);
+  cursor: pointer;
+  z-index: 20;
+}
+
+/* HUD 疊在畫面下方 */
+#hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 8px 8px;
+  background: linear-gradient(
+    to top,
+    rgba(15, 23, 42, 0.95),
+    rgba(15, 23, 42, 0.0)
+  );
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#hud .row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+#hud .row.small {
+  font-size: 10px;
+  opacity: 0.95;
+}
+
+#hud .label {
+  color: #9ca3af;
+}
+
+#hud .value {
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+#hud .value.big {
+  font-size: 16px;
+}
+
+#hud .unit {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+/* 信心條 */
+.bar {
+  margin-top: 2px;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(30, 64, 175, 0.9);
+  overflow: hidden;
+}
+
+#confidence-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22c55e, #38bdf8);
+  transition: width 0.15s ease-out;
+}
+
+/* 下方提示 */
+.tip {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+  line-height: 1.4;
+}
