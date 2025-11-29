@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit 手部骨架＋猜拳 Demo（修正版方向）</title>
+  <title>GameFit 手部骨架＋猜拳 Demo（前鏡頭鏡像，後鏡頭正常）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <style>
@@ -33,7 +33,7 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
-      transform: scaleX(-1); /* 🎯 前後鏡頭都做鏡像 */
+      /* transform 在 JS 裡動態設定，不在這裡固定 */
     }
     #overlay { background: transparent; }
 
@@ -97,7 +97,7 @@
 
 <body>
   <div id="app">
-    <h1>GameFit 手部骨架＋猜拳 Demo（修正版方向）</h1>
+    <h1>GameFit 手部骨架＋猜拳 Demo</h1>
 
     <div id="video-container">
       <video id="video" playsinline></video>
@@ -133,7 +133,7 @@
     const confidenceBar = document.getElementById("confidence-bar");
     const switchCamBtn = document.getElementById("switchCamBtn");
 
-    let currentFacing = "user";  // 🎯 前鏡頭開始
+    let currentFacing = "user";  // 前鏡頭開始
     let detector = null;
     let lastStream = null;
 
@@ -145,8 +145,8 @@
       [0,17,18,19,20]
     ];
 
-    /* ---------------------------- 相機設定 ---------------------------- */
     async function setupCamera() {
+      // 關掉上一次 stream
       if (lastStream) lastStream.getTracks().forEach(t => t.stop());
 
       statusEl.textContent =
@@ -164,6 +164,18 @@
         video.onloadedmetadata = () => {
           video.play();
           resizeCanvas();
+
+          // 🎯 這裡控制鏡像：
+          // 前鏡頭：鏡像（自拍習慣）
+          // 後鏡頭：正常
+          if (currentFacing === "user") {
+            video.style.transform = "scaleX(-1)";
+            canvas.style.transform = "scaleX(-1)";
+          } else {
+            video.style.transform = "scaleX(1)";
+            canvas.style.transform = "scaleX(1)";
+          }
+
           resolve();
         };
       });
@@ -193,14 +205,11 @@
       canvas.height = video.videoHeight || 640;
     }
 
-    /* ---------------------------- 手部骨架繪製（已修正方向） ---------------------------- */
     function drawHand(hand) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!hand) return;
 
       const kp = hand.keypoints;
-
-      // 🎯 不要左右反轉，保持 video CSS 的鏡像為主
       const tx = (p) => ({
         x: (p.x / video.videoWidth) * canvas.width,
         y: (p.y / video.videoHeight) * canvas.height
@@ -243,7 +252,6 @@
       });
     }
 
-    /* ---------------------------- 手勢分類 ---------------------------- */
     function distance(a,b){
       return Math.hypot(a.x-b.x, a.y-b.y);
     }
@@ -269,7 +277,6 @@
       return {label:"不確定", conf:0.3};
     }
 
-    /* ---------------------------- 主推論 Loop ---------------------------- */
     async function loop(){
       if(!detector) return requestAnimationFrame(loop);
 
@@ -297,10 +304,16 @@
       requestAnimationFrame(loop);
     }
 
-    /* ---------------------------- main() ---------------------------- */
     async function main(){
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("瀏覽器不支援相機，請用 iPhone Safari 或新版 Chrome。");
+        statusEl.textContent = "此瀏覽器不支援相機。";
+        return;
+      }
+
       await setupCamera();
       await reloadDetector();
+      statusEl.textContent = "請把一隻手放到畫面中央，比出石頭 / 剪刀 / 布。";
       loop();
     }
     main();
