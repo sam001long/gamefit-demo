@@ -37,6 +37,22 @@
     }
     #overlay { background: transparent; }
 
+    /* 切換鏡頭按鈕 */
+    #switchCamBtn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 5px 8px;
+      font-size: 11px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.85);
+      color: #e5e7eb;
+      border: 1px solid #38bdf8;
+      backdrop-filter: blur(4px);
+      cursor: pointer;
+      z-index: 20;
+    }
+
     #hud {
       position: absolute;
       left: 0; right: 0; bottom: 0;
@@ -101,6 +117,9 @@
       <video id="video" playsinline></video>
       <canvas id="overlay"></canvas>
 
+      <!-- 新增：切換前/後鏡頭 -->
+      <button id="switchCamBtn">切換鏡頭</button>
+
       <div id="hud">
         <div class="row">
           <span class="label">狀態：</span>
@@ -122,9 +141,10 @@
 
     <p class="tip">
       建議用 iPhone Safari 開啟 hand_demo.html。<br>
-      允許相機權限後，會啟動前鏡頭。<br>
+      允許相機權限後，預設使用前鏡頭。<br>
       把一隻手放在畫面中央、手心朝向鏡頭（距離約 30–60 公分），<br>
-      試著比出：石頭（拳頭）／剪刀（✌）／布（張開五指）。
+      試著比出：石頭（拳頭）／剪刀（✌）／布（張開五指）。<br>
+      也可以按「切換鏡頭」改用後鏡頭拍攝別人的手。
     </p>
   </div>
 
@@ -138,9 +158,11 @@
     const gestureEl = document.getElementById("gesture");
     const confidenceEl = document.getElementById("confidence");
     const confidenceBar = document.getElementById("confidence-bar");
+    const switchCamBtn = document.getElementById("switchCamBtn");
 
     let detector = null;
     let running = true;
+    let currentFacing = "user"; // 預設前鏡頭
 
     const fingerChains = [
       [0, 1, 2, 3, 4],    // thumb
@@ -271,9 +293,12 @@
     }
 
     async function setupCamera() {
-      statusEl.textContent = "啟動前鏡頭…";
+      statusEl.textContent = currentFacing === "user"
+        ? "啟動前鏡頭…"
+        : "啟動後鏡頭…";
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
+        video: { facingMode: currentFacing },
         audio: false
       });
       video.srcObject = stream;
@@ -286,12 +311,32 @@
       });
     }
 
+    async function switchCamera() {
+      currentFacing = currentFacing === "user" ? "environment" : "user";
+
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+      }
+
+      try {
+        await setupCamera();
+      } catch (e) {
+        console.error("switchCamera error", e);
+        statusEl.textContent = "切換鏡頭失敗：" + e.message;
+        alert("切換鏡頭失敗，請確認相機權限有開。");
+      }
+    }
+
+    switchCamBtn.addEventListener("click", () => {
+      switchCamera();
+    });
+
     async function detectionLoop() {
       if (!detector) return;
 
       let hands = [];
       try {
-        // 不做 flipHorizontal，先確保骨架有疊到
+        // 不做 flipHorizontal，確保前/後鏡頭都先穩定
         hands = await detector.estimateHands(video);
       } catch (e) {
         console.error("estimateHands error", e);
