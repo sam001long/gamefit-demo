@@ -2,14 +2,10 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit 3D 同步深蹲 Demo（含骨架）</title>
+  <title>GameFit 3D 同步深蹲 Demo（Safari 修正版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Three.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150/examples/js/loaders/GLTFLoader.js"></script>
-
-  <!-- TensorFlow.js + Pose Detection -->
+  <!-- TensorFlow.js + MoveNet -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
 
@@ -23,15 +19,9 @@
       color: #e5e7eb;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       min-height: 100vh;
-      padding: 10px;
-      gap: 10px;
+      padding: 12px;
+      gap: 12px;
     }
-
-    h1 {
-      font-size: 18px;
-      text-align: center;
-    }
-
     #video-container {
       position: relative;
       width: 100%;
@@ -42,7 +32,6 @@
       overflow: hidden;
       border: 1px solid #1f2937;
     }
-
     #video, #overlay {
       position: absolute;
       inset: 0;
@@ -50,323 +39,256 @@
       height: 100%;
       object-fit: contain;
     }
-
-    #angle-label {
-      font-size: 13px;
-      text-align: center;
-    }
-
     #renderArea {
       width: 100%;
       max-width: 480px;
       height: 260px;
-      background: #0f172a;
       border-radius: 12px;
+      background: #1e293b;
+      border: 1px solid #334155;
       overflow: hidden;
-      border: 1px solid #1f2937;
-    }
-
-    #hint {
-      font-size: 11px;
-      color: #9ca3af;
-      text-align: left;
-      max-width: 480px;
-      line-height: 1.4;
     }
   </style>
 </head>
+
 <body>
-  <h1>GameFit 3D 同步深蹲 Demo</h1>
+<h2>GameFit 3D 同步深蹲 Demo</h2>
 
-  <div id="video-container">
-    <video id="video" playsinline></video>
-    <canvas id="overlay"></canvas>
-  </div>
+<div id="video-container">
+  <video id="video" playsinline></video>
+  <canvas id="overlay"></canvas>
+</div>
 
-  <div id="angle-label">左膝角度：--°</div>
+<div id="angle-label">左膝角度：--°</div>
+<div id="renderArea"></div>
 
-  <div id="renderArea"></div>
+<!-- Three.js 用 ES Module（Safari 最穩） -->
+<script type="module">
 
-  <div id="hint">
-    使用方式：<br>
-    1. 用 <b>後鏡頭</b> 對著自己，退後一點讓下半身入鏡。<br>
-    2. 緩慢做深蹲動作，畫面會顯示骨架和左膝角度。<br>
-    3. 下方 3D 人物會跟著你的膝蓋角度一起蹲下、站起。<br>
-  </div>
+/* -------------------- 匯入 Three.js（iPhone 最穩定） -------------------- */
+import * as THREE from "https://unpkg.com/three@0.150.0/build/three.module.js";
+import { GLTFLoader } from "https://unpkg.com/three@0.150.0/examples/jsm/loaders/GLTFLoader.js";
 
-  <script>
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("overlay");
-    const ctx = canvas.getContext("2d");
-    const angleLabel = document.getElementById("angle-label");
+/* -------------------- HTML 元件 -------------------- */
+const video = document.getElementById("video");
+const canvas = document.getElementById("overlay");
+const ctx = canvas.getContext("2d");
+const angleLabel = document.getElementById("angle-label");
 
-    let detector = null;
-    let lastStream = null;
-    let lastKneeAngle = 0;
+/* -------------------- TensorFlow MoveNet -------------------- */
+let detector = null;
+let lastStream = null;
+let lastKneeAngle = 0;
 
-    const adjacentPairs = [
-      ["left_shoulder", "right_shoulder"],
-      ["left_shoulder", "left_elbow"],
-      ["left_elbow", "left_wrist"],
-      ["right_shoulder", "right_elbow"],
-      ["right_elbow", "right_wrist"],
-      ["left_shoulder", "left_hip"],
-      ["right_shoulder", "right_hip"],
-      ["left_hip", "right_hip"],
-      ["left_hip", "left_knee"],
-      ["left_knee", "left_ankle"],
-      ["right_hip", "right_knee"],
-      ["right_knee", "right_ankle"]
-    ];
+/* -------------------- 全身骨架連線設定 -------------------- */
+const adjacentPairs = [
+  ["left_shoulder", "right_shoulder"],
+  ["left_shoulder", "left_elbow"],
+  ["left_elbow", "left_wrist"],
+  ["right_shoulder", "right_elbow"],
+  ["right_elbow", "right_wrist"],
+  ["left_shoulder", "left_hip"],
+  ["right_shoulder", "right_hip"],
+  ["left_hip", "right_hip"],
+  ["left_hip", "left_knee"],
+  ["left_knee", "left_ankle"],
+  ["right_hip", "right_knee"],
+  ["right_knee", "right_ankle"]
+];
 
-    function angleBetween(a, b, c) {
-      const ab = { x: a.x - b.x, y: a.y - b.y };
-      const cb = { x: c.x - b.x, y: c.y - b.y };
-      const dot = ab.x * cb.x + ab.y * cb.y;
-      const magAB = Math.hypot(ab.x, ab.y);
-      const magCB = Math.hypot(cb.x, cb.y);
-      if (!magAB || !magCB) return 0;
-      const cos = dot / (magAB * magCB);
-      const clamped = Math.max(-1, Math.min(1, cos));
-      return (Math.acos(clamped) * 180) / Math.PI;
+/* -------------------- 計算角度 -------------------- */
+function angleBetween(a, b, c) {
+  const ab = { x:a.x-b.x, y:a.y-b.y };
+  const cb = { x:c.x-b.x, y:c.y-b.y };
+  const dot = ab.x * cb.x + ab.y * cb.y;
+  const magAB = Math.hypot(ab.x, ab.y);
+  const magCB = Math.hypot(cb.x, cb.y);
+  if (!magAB || !magCB) return 0;
+  return Math.acos(dot / (magAB * magCB)) * 180 / Math.PI;
+}
+
+/* -------------------- 相機啟動 -------------------- */
+async function setupCamera() {
+  if (lastStream) lastStream.getTracks().forEach(t => t.stop());
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false
+  });
+
+  lastStream = stream;
+  video.srcObject = stream;
+
+  return new Promise(resolve => {
+    video.onloadedmetadata = () => {
+      video.play();
+      resizeCanvas();
+      resolve();
+    };
+  });
+}
+
+function resizeCanvas() {
+  canvas.width = video.videoWidth || 360;
+  canvas.height = video.videoHeight || 640;
+}
+
+/* -------------------- 2D 骨架畫線 -------------------- */
+function drawPose(keypoints) {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (!keypoints) return;
+
+  const toScreen = kp => ({
+    x: kp.x / video.videoWidth * canvas.width,
+    y: kp.y / video.videoHeight * canvas.height
+  });
+
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "#38bdf8";
+  ctx.shadowColor = "#38bdf8";
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+
+  adjacentPairs.forEach(([aName,bName]) => {
+    const a = keypoints.find(k=>k.name===aName);
+    const b = keypoints.find(k=>k.name===bName);
+    if (!a || !b || a.score<0.3 || b.score<0.3) return;
+    const sa = toScreen(a);
+    const sb = toScreen(b);
+    ctx.moveTo(sa.x, sa.y);
+    ctx.lineTo(sb.x, sb.y);
+  });
+  ctx.stroke();
+
+  keypoints.forEach(k => {
+    if (k.score < 0.3) return;
+    const {x,y} = toScreen(k);
+
+    ctx.fillStyle = "rgba(56,189,248,0.25)";
+    ctx.shadowColor = "#38bdf8";
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(x,y,8,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = "#38bdf8";
+    ctx.beginPath();
+    ctx.arc(x,y,3.5,0,Math.PI*2);
+    ctx.fill();
+  });
+}
+
+/* -------------------- Three.js 3D 場景 -------------------- */
+let scene, camera3D, renderer, model;
+
+function init3D() {
+  const area = document.getElementById("renderArea");
+
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(area.clientWidth, area.clientHeight);
+  area.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color("#0f172a");
+
+  camera3D = new THREE.PerspectiveCamera(
+    40,
+    area.clientWidth/area.clientHeight,
+    0.1,
+    100
+  );
+  camera3D.position.set(0,1.5,3);
+  scene.add(camera3D);
+
+  const light = new THREE.DirectionalLight(0xffffff,1.2);
+  light.position.set(2,4,3);
+  scene.add(light);
+
+  const loader = new GLTFLoader();
+  loader.load(
+    "https://threejs.org/examples/models/gltf/Soldier.glb",
+    glb => {
+      model = glb.scene;
+      model.scale.set(1.2,1.2,1.2);
+      scene.add(model);
     }
+  );
 
-    async function setupCamera() {
-      if (lastStream) lastStream.getTracks().forEach(t => t.stop());
+  animate3D();
+}
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }, // 後鏡頭
-        audio: false
-      });
+function animate3D() {
+  requestAnimationFrame(animate3D);
 
-      lastStream = stream;
-      video.srcObject = stream;
+  if (model) {
+    const upLeg = model.getObjectByName("mixamorig_LeftUpLeg");
+    const leg = model.getObjectByName("mixamorig_LeftLeg");
 
-      return new Promise(resolve => {
-        video.onloadedmetadata = () => {
-          video.play();
-          resizeCanvas();
-          resolve();
-        };
-      });
+    if (upLeg) upLeg.rotation.x = THREE.MathUtils.degToRad(-lastKneeAngle * 0.4);
+    if (leg) leg.rotation.x = THREE.MathUtils.degToRad(-lastKneeAngle * 0.6);
+  }
+
+  renderer.render(scene, camera3D);
+}
+
+/* -------------------- MoveNet 迴圈 -------------------- */
+async function poseLoop() {
+  if (!detector) {
+    requestAnimationFrame(poseLoop);
+    return;
+  }
+
+  let poses = [];
+  try {
+    poses = await detector.estimatePoses(video, { maxPoses: 1 });
+  } catch(e){}
+
+  if (poses.length === 0) {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    angleLabel.textContent = "左膝角度：--°（請退後）";
+    requestAnimationFrame(poseLoop);
+    return;
+  }
+
+  const kp = poses[0].keypoints;
+  drawPose(kp);
+
+  const hip = kp.find(k=>k.name==="left_hip");
+  const knee = kp.find(k=>k.name==="left_knee");
+  const ankle = kp.find(k=>k.name==="left_ankle");
+
+  if (hip && knee && ankle &&
+      hip.score>0.3 && knee.score>0.3 && ankle.score>0.3) {
+
+    const kAngle = angleBetween(hip,knee,ankle);
+
+    lastKneeAngle = lastKneeAngle * 0.8 + kAngle * 0.2;
+
+    angleLabel.textContent = `左膝角度：${Math.round(lastKneeAngle)}°`;
+  }
+
+  requestAnimationFrame(poseLoop);
+}
+
+/* -------------------- Init -------------------- */
+(async ()=>{
+
+  await setupCamera();
+  await tf.ready();
+
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+      runtime: "tfjs"
     }
+  );
 
-    function resizeCanvas() {
-      canvas.width = video.videoWidth || 360;
-      canvas.height = video.videoHeight || 640;
-    }
+  init3D();
+  poseLoop();
 
-    function drawPose(keypoints) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!keypoints || !video.videoWidth || !video.videoHeight) return;
+})();
+</script>
 
-      const toScreen = (kp) => ({
-        x: (kp.x / video.videoWidth) * canvas.width,
-        y: (kp.y / video.videoHeight) * canvas.height
-      });
-
-      ctx.save();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = "#38bdf8";
-      ctx.shadowColor = "#38bdf8";
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      adjacentPairs.forEach(([aName, bName]) => {
-        const a = keypoints.find(k => k.name === aName || k.part === aName);
-        const b = keypoints.find(k => k.name === bName || k.part === bName);
-        if (!a || !b || a.score < 0.3 || b.score < 0.3) return;
-        const sa = toScreen(a);
-        const sb = toScreen(b);
-        ctx.moveTo(sa.x, sa.y);
-        ctx.lineTo(sb.x, sb.y);
-      });
-      ctx.stroke();
-      ctx.restore();
-
-      keypoints.forEach(kp => {
-        if (kp.score < 0.3) return;
-        const { x, y } = toScreen(kp);
-
-        ctx.save();
-        ctx.fillStyle = "rgba(56,189,248,0.25)";
-        ctx.shadowColor = "#38bdf8";
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.arc(x, y, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        ctx.save();
-        ctx.fillStyle = "#38bdf8";
-        ctx.beginPath();
-        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      });
-    }
-
-    function computeKneeAngle(keypoints) {
-      const hip = keypoints.find(k => k.name === "left_hip" || k.part === "left_hip");
-      const knee = keypoints.find(k => k.name === "left_knee" || k.part === "left_knee");
-      const ankle = keypoints.find(k => k.name === "left_ankle" || k.part === "left_ankle");
-
-      if (!hip || !knee || !ankle ||
-          hip.score < 0.3 || knee.score < 0.3 || ankle.score < 0.3) {
-        return null;
-      }
-
-      return angleBetween(
-        { x: hip.x, y: hip.y },
-        { x: knee.x, y: knee.y },
-        { x: ankle.x, y: ankle.y }
-      );
-    }
-
-    /* -------------------- Three.js 3D 場景 -------------------- */
-    let scene, camera3D, renderer, model;
-
-    function init3D() {
-      const area = document.getElementById("renderArea");
-
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(area.clientWidth, area.clientHeight);
-      area.appendChild(renderer.domElement);
-
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color("#020617");
-
-      camera3D = new THREE.PerspectiveCamera(
-        40,
-        area.clientWidth / area.clientHeight,
-        0.1,
-        100
-      );
-      camera3D.position.set(0, 1.5, 3);
-      scene.add(camera3D);
-
-      const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-      hemiLight.position.set(0, 1, 0);
-      scene.add(hemiLight);
-
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-      dirLight.position.set(2, 4, 3);
-      scene.add(dirLight);
-
-      const groundGeo = new THREE.CircleGeometry(2, 64);
-      const groundMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
-      const ground = new THREE.Mesh(groundGeo, groundMat);
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = 0;
-      scene.add(ground);
-
-      const loader = new THREE.GLTFLoader();
-      loader.load(
-        "https://threejs.org/examples/models/gltf/Soldier.glb",
-        glb => {
-          model = glb.scene;
-          model.scale.set(1.2, 1.2, 1.2);
-          model.position.y = 0; // 站在地面上
-
-          scene.add(model);
-        },
-        undefined,
-        err => {
-          console.error("載入 GLB 模型失敗", err);
-        }
-      );
-
-      animate3D();
-    }
-
-    function animate3D() {
-      requestAnimationFrame(animate3D);
-
-      // 根據 lastKneeAngle 調整左腿骨頭
-      if (model) {
-        const leftUpperLeg =
-          model.getObjectByName("mixamorig_LeftUpLeg") ||
-          model.getObjectByName("LeftUpLeg");
-
-        const leftLeg =
-          model.getObjectByName("mixamorig_LeftLeg") ||
-          model.getObjectByName("LeftLeg");
-
-        // 讓角色往後坐下的感覺（大腿 + 小腿一起配合）
-        const rad = THREE.MathUtils.degToRad(lastKneeAngle);
-        if (leftUpperLeg) {
-          leftUpperLeg.rotation.x = -rad * 0.4;
-        }
-        if (leftLeg) {
-          leftLeg.rotation.x = -rad * 0.6;
-        }
-      }
-
-      renderer.render(scene, camera3D);
-    }
-
-    /* -------------------- MoveNet 迴圈 -------------------- */
-    async function poseLoop() {
-      if (!detector) {
-        requestAnimationFrame(poseLoop);
-        return;
-      }
-
-      let poses = [];
-      try {
-        poses = await detector.estimatePoses(video, { maxPoses: 1 });
-      } catch (e) {
-        console.error(e);
-      }
-
-      if (!poses || poses.length === 0) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        angleLabel.textContent = "左膝角度：--°（請退後一點讓下半身入鏡）";
-        requestAnimationFrame(poseLoop);
-        return;
-      }
-
-      const kp = poses[0].keypoints;
-      drawPose(kp);
-
-      const kneeAng = computeKneeAngle(kp);
-      if (kneeAng == null) {
-        angleLabel.textContent = "左膝角度：--°（偵測不到左腳，稍微轉一下位置）";
-      } else {
-        const smooth = 0.8;
-        lastKneeAngle = lastKneeAngle * smooth + kneeAng * (1 - smooth);
-        angleLabel.textContent = "左膝角度：" + Math.round(lastKneeAngle) + "°";
-      }
-
-      requestAnimationFrame(poseLoop);
-    }
-
-    async function main() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("瀏覽器不支援相機，請改用 iPhone Safari 或新版 Chrome。");
-        return;
-      }
-
-      await setupCamera();
-      window.addEventListener("resize", resizeCanvas);
-
-      await tf.ready();
-
-      detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        {
-          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
-          runtime: "tfjs"
-        }
-      );
-
-      init3D();
-      poseLoop();
-    }
-
-    main().catch(err => {
-      console.error(err);
-      alert("初始化失敗：" + err.message);
-    });
-  </script>
 </body>
 </html>
