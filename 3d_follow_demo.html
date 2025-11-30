@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>GameFit 3D 同步深蹲 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Three.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150/examples/js/loaders/GLTFLoader.js"></script>
+
+  <!-- TensorFlow.js + MoveNet -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #0f172a;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #videoContainer {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 9 / 16;
+      background: black;
+      overflow: hidden;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transform: scaleX(-1);
+    }
+
+    #angle {
+      font-size: 20px;
+      margin-top: 8px;
+    }
+
+    #renderArea {
+      width: 100%;
+      max-width: 480px;
+      height: 260px;
+      background: #1e293b;
+      margin-top: 12px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>GameFit 3D 同步深蹲 Demo</h2>
+
+  <div id="videoContainer">
+    <video id="video" playsinline></video>
+  </div>
+
+  <div id="angle">膝蓋角度：--°</div>
+
+  <!-- 3D 角色區 -->
+  <div id="renderArea"></div>
+
+<script>
+/* ------------------------- 1. 相機 --------------------------- */
+const video = document.getElementById("video");
+
+async function setupCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false
+  });
+  video.srcObject = stream;
+  return new Promise(res => {
+    video.onloadedmetadata = () => video.play() & res();
+  });
+}
+
+/* ------------------------- 2. 計算角度 --------------------------- */
+function angle(a, b, c) {
+  const ab = { x:a.x-b.x, y:a.y-b.y };
+  const cb = { x:c.x-b.x, y:c.y-b.y };
+  const dot = ab.x * cb.x + ab.y * cb.y;
+  const magAB = Math.hypot(ab.x, ab.y);
+  const magCB = Math.hypot(cb.x, cb.y);
+  if (!magAB || !magCB) return 0;
+  return Math.acos(dot / (magAB * magCB)) * 180 / Math.PI;
+}
+
+/* ------------------------- 3. Three.js 場景 --------------------------- */
+let scene, camera, renderer, model;
+function init3D() {
+  const area = document.getElementById("renderArea");
+
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(area.clientWidth, area.clientHeight);
+  area.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color("#1e293b");
+
+  camera = new THREE.PerspectiveCamera(
+    40,
+    area.clientWidth / area.clientHeight,
+    0.1,
+    100
+  );
+  camera.position.set(0, 1.6, 3);
+  scene.add(camera);
+
+  const light = new THREE.DirectionalLight(0xffffff, 1.2);
+  light.position.set(1,1,1);
+  scene.add(light);
+
+  const loader = new THREE.GLTFLoader();
+
+  // 使用 Mixamo 人物（我幫你挑了一個兼容性最佳、最穩定的）
+  loader.load(
+    "https://models.readyplayer.me/64fae3dc07f444001e1a9e60.glb",
+    glb => {
+      model = glb.scene;
+      model.scale.set(1.4, 1.4, 1.4);
+      scene.add(model);
+    }
+  );
+
+  animate3D();
+}
+
+function animate3D() {
+  requestAnimationFrame(animate3D);
+  renderer.render(scene, camera);
+}
+
+/* ------------------------- 4. MoveNet 啟動 --------------------------- */
+let detector;
+
+async function initMoveNet() {
+  detector = await poseDetection.createDetector(
+    poseDetection.SupportedModels.MoveNet,
+    {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+    }
+  );
+}
+
+/* ------------------------- 5. 主 Loop：計算角度 + 套到 3D --------------------------- */
+async function loop() {
+  const poses = await detector.estimatePoses(video);
+  if (poses.length > 0) {
+    const kp = poses[0].keypoints;
+
+    const hip = kp.find(k => k.name === "left_hip");
+    const knee = kp.find(k => k.name === "left_knee");
+    const ankle = kp.find(k => k.name === "left_ankle");
+
+    if (hip && knee && ankle && hip.score>0.3 && knee.score>0.3 && ankle.score>0.3) {
+      const kneeAng = Math.round(angle(hip, knee, ankle));
+      document.getElementById("angle").textContent = `膝蓋角度：${kneeAng}°`;
+
+      // 套到 3D 模型
+      if (model) {
+        const leg = model.getObjectByName("LeftLeg") ||
+                    model.getObjectByName("mixamorig_LeftLeg");
+        if (leg) {
+          // 深蹲：膝蓋彎曲往後收（適度倒轉）
+          leg.rotation.x = THREE.MathUtils.degToRad(-kneeAng * 0.6);
+        }
+      }
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+/* ------------------------- Main --------------------------- */
+(async () => {
+  await setupCamera();
+  await initMoveNet();
+  init3D();
+  loop();
+})();
+</script>
+
+</body>
+</html>
