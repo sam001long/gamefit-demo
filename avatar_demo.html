@@ -98,9 +98,9 @@
 
     let detector = null;
     let lastStream = null;
-    let lastKneeAngle = 180;   // 平滑後膝蓋角度（初始站直）
-    let rawKneeAngle = 180;    // 原始角度
+    let lastKneeAngle = 180;   // 平滑後的膝蓋角度（初始站直）
 
+    // 全身骨架連線
     const adjacentPairs = [
       ["left_shoulder", "right_shoulder"],
       ["left_shoulder", "left_elbow"],
@@ -132,7 +132,7 @@
       if (lastStream) lastStream.getTracks().forEach(t => t.stop());
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: { facingMode: "environment" }, // 後鏡頭
         audio: false
       });
 
@@ -209,24 +209,34 @@
       });
     }
 
+    // 為了避免 MoveNet / 其他模型 keypoints 命名差異，這裡做一個 helper：
+    function getPoint(keypoints, name, fallbackIndexArray = []) {
+      let pt = keypoints.find(k => k.name === name || k.part === name);
+      if (pt) return pt;
+      for (const idx of fallbackIndexArray) {
+        if (keypoints[idx]) return keypoints[idx];
+      }
+      return null;
+    }
+
     function computeKneeAngle(keypoints) {
-      const hip = keypoints.find(k => k.name === "left_hip" || k.part === "left_hip");
-      const knee = keypoints.find(k => k.name === "left_knee" || k.part === "left_knee");
-      const ankle = keypoints.find(k => k.name === "left_ankle" || k.part === "left_ankle");
+      // 優先用 name，失敗就用 index（MoveNet 左臀=11, 左膝=13, 左踝=15）
+      const hip   = getPoint(keypoints, "left_hip",   [11, 23]);
+      const knee  = getPoint(keypoints, "left_knee",  [13, 25]);
+      const ankle = getPoint(keypoints, "left_ankle", [15, 27]);
 
       if (!hip || !knee || !ankle ||
-          hip.score < 0.3 || knee.score < 0.3 || ankle.score < 0.3) {
+          hip.score < 0.2 || knee.score < 0.2 || ankle.score < 0.2) {
         return null;
       }
 
       return angleBetween(
-        { x: hip.x, y: hip.y },
-        { x: knee.x, y: knee.y },
+        { x: hip.x,   y: hip.y },
+        { x: knee.x,  y: knee.y },
         { x: ankle.x, y: ankle.y }
       );
     }
 
-    // 2D Avatar：用平滑後的膝蓋角度控制
     function drawAvatar(angleDeg) {
       const w = avatarCanvas.width;
       const h = avatarCanvas.height;
@@ -240,10 +250,9 @@
       const centerX = w * 0.5;
       const hipYBase = h * 0.6;
 
-      // 限制膝蓋角度在 60~180，避免跳太誇張
+      // 限制膝蓋角度在 60~180
       const clamped = Math.max(60, Math.min(180, angleDeg || 180));
-      // 深蹲程度 0~1
-      const squatAmount = (180 - clamped) / (180 - 60);
+      const squatAmount = (180 - clamped) / (180 - 60); // 0=站直, 1=深蹲
 
       const hipY = hipYBase + squatAmount * 30;
 
@@ -353,11 +362,7 @@
       if (ang == null) {
         angleLabel.textContent = "左膝角度：--°（偵測不到左腿）";
       } else {
-        // 先更新 raw，方便之後 debug / 顯示用
-        rawKneeAngle = ang;
-
-        // 更強平滑：0.9 自己 + 0.1 新值，減少抖動
-        const alpha = 0.9;
+        const alpha = 0.9; // 平滑係數，數字越大越穩
         lastKneeAngle = lastKneeAngle * alpha + ang * (1 - alpha);
 
         const display = Math.round(lastKneeAngle);
