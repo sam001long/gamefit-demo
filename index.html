@@ -104,25 +104,26 @@
     </div>
 
     <div class="grid">
-      <!-- 1. 全身骨架基本版 -->
+      <!-- 1. 全身骨架偵測 -->
       <div class="card">
         <div>
           <div class="card-header">
             <div class="icon">🧍‍♂️</div>
             <div>
               <div class="title">全身骨架偵測</div>
-              <div class="tag">Pose / 角度基礎</div>
+              <div class="tag">Pose / 骨架基礎</div>
             </div>
           </div>
           <div class="desc">
             以手機鏡頭即時偵測全身骨架，顯示關節節點與連線。<br>
-            之後所有動作數據與遊戲判定都以這個骨架為基礎。
+            之後所有動作數據與遊戲判定都會以這個骨架為基礎。
           </div>
         </div>
+        <!-- ✅ 正確連到 pose_demo.html -->
         <a class="btn" href="pose_demo.html">開啟 Demo</a>
       </div>
 
-      <!-- 2. 手部骨架＋猜拳 -->
+      <!-- 2. 手部骨架與猜拳 -->
       <div class="card">
         <div>
           <div class="card-header">
@@ -133,10 +134,11 @@
             </div>
           </div>
           <div class="desc">
-            只用手機前鏡頭即可偵測單手骨架，辨識石頭 / 剪刀 / 布。<br>
-            用來延伸成手勢操控介面、遊戲指令輸入。
+            只用前鏡頭即可偵測單手骨架，辨識石頭 / 剪刀 / 布。<br>
+            可延伸成手勢操控介面、拳擊 Combo 判定、遊戲指令輸入。
           </div>
         </div>
+        <!-- ✅ 正確連到 hand_demo.html -->
         <a class="btn" href="hand_demo.html">開啟 Demo</a>
       </div>
 
@@ -158,7 +160,7 @@
         <a class="btn" href="motion_demo.html">開啟 Demo</a>
       </div>
 
-      <!-- 4. Avatar 同步深蹲 -->
+      <!-- 4. Avatar 同步深蹲（2D 一起動作） -->
       <div class="card">
         <div>
           <div class="card-header">
@@ -175,11 +177,29 @@
         </div>
         <a class="btn" href="avatar_demo.html">開啟 Demo</a>
       </div>
+
+      <!-- 5. 臉部骨架＋表情偵測（如果還沒做好，可以先暫時刪掉這張卡） -->
+      <div class="card">
+        <div>
+          <div class="card-header">
+            <div class="icon">😊</div>
+            <div>
+              <div class="title">臉部骨架＋表情偵測</div>
+              <div class="tag">Face / Expression</div>
+            </div>
+          </div>
+          <div class="desc">
+            使用前鏡頭偵測臉部骨架與表情狀態，包含嘴巴張合與簡單情緒分類。<br>
+            可用於虛擬角色表情同步、運動專注度/疲勞度分析。
+          </div>
+        </div>
+        <a class="btn" href="face_demo.html">開啟 Demo</a>
+      </div>
     </div>
 
     <div class="footer">
       建議以 iPhone Safari 全螢幕開啟，每一個 Demo 都可獨立展示。<br>
-      之後若再新增拳擊、瑜珈、K-pop 等 Demo，也可以繼續加在這個主選單裡。
+      之後若新增拳擊、瑜珈、K-pop 等 Demo，也可以繼續加在這個主選單裡。
     </div>
   </div>
 </body>
