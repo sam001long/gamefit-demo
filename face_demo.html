@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>Face Expression Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- TensorFlow + FaceMesh -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #020617;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+      gap: 14px;
+    }
+    #videoContainer {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 3/4;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #1f2937;
+    }
+    #video, #canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    #expression {
+      font-size: 18px;
+      color: #38bdf8;
+      text-shadow: 0 0 8px #38bdf8;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>臉部表情偵測 Demo</h2>
+<div id="expression">表情：--</div>
+
+<div id="videoContainer">
+  <video id="video" playsinline></video>
+  <canvas id="canvas"></canvas>
+</div>
+
+<script>
+let model;
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const label = document.getElementById("expression");
+
+async function setupCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user" }, audio: false
+  });
+  video.srcObject = stream;
+  return new Promise(res => video.onloadedmetadata = () => video.play() & res());
+}
+
+function classifyExpression(landmarks) {
+  if (!landmarks) return "--";
+
+  const leftEye = landmarks[159].y - landmarks[145].y;
+  const rightEye = landmarks[386].y - landmarks[374].y;
+  const mouthOpen = landmarks[13].y - landmarks[14].y;
+
+  if (mouthOpen > 9) return "😮 驚訝";
+  if (mouthOpen < 3) return "😐 中性";
+  if (leftEye < 1.5 && rightEye < 1.5) return "😆 大笑";
+  return "🙂 微笑";
+}
+
+async function loop() {
+  const faces = await model.estimateFaces({
+    input: video,
+    predictIrises: true
+  });
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if (faces.length > 0) {
+    const pts = faces[0].scaledMesh;
+
+    ctx.fillStyle = "#38bdf8";
+    pts.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    const expression = classifyExpression(pts);
+    label.textContent = "表情：" + expression;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+(async () => {
+  await setupCamera();
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  model = await faceLandmarksDetection.load(
+    faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
+  );
+
+  loop();
+})();
+</script>
+</body>
+</html>
