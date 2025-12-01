@@ -2,14 +2,15 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>Face Expression Demo</title>
+  <title>GameFit 臉部表情偵測 Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- TensorFlow + FaceMesh -->
+  <!-- TensorFlow.js + Face Landmarks -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
 
   <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       margin: 0;
       background: #020617;
@@ -19,13 +20,14 @@
       flex-direction: column;
       align-items: center;
       padding: 12px;
-      gap: 14px;
+      gap: 10px;
     }
+    h1 { font-size: 18px; text-align: center; }
     #videoContainer {
       position: relative;
       width: 100%;
       max-width: 420px;
-      aspect-ratio: 3/4;
+      aspect-ratio: 3 / 4;
       background: #000;
       border-radius: 12px;
       overflow: hidden;
@@ -38,88 +40,186 @@
       height: 100%;
       object-fit: contain;
     }
+    #canvas { pointer-events: none; }
     #expression {
-      font-size: 18px;
+      font-size: 16px;
       color: #38bdf8;
+      text-align: center;
       text-shadow: 0 0 8px #38bdf8;
+    }
+    #hint {
+      font-size: 11px;
+      color: #9ca3af;
+      max-width: 420px;
+      line-height: 1.4;
     }
   </style>
 </head>
 
 <body>
+  <h1>臉部骨架＋表情偵測 Demo</h1>
+  <div id="expression">表情：--</div>
 
-<h2>臉部表情偵測 Demo</h2>
-<div id="expression">表情：--</div>
+  <div id="videoContainer">
+    <video id="video" playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
 
-<div id="videoContainer">
-  <video id="video" playsinline></video>
-  <canvas id="canvas"></canvas>
-</div>
+  <div id="hint">
+    使用方式：<br>
+    1. 使用前鏡頭，把臉移到畫面中央。<br>
+    2. 嘴巴張大、微笑、放鬆表情，觀察上方文字變化。<br>
+    3. 螢幕上的藍色點為臉部骨架（多個特徵點）。<br>
+  </div>
 
-<script>
-let model;
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const label = document.getElementById("expression");
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const expressionLabel = document.getElementById("expression");
 
-async function setupCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user" }, audio: false
-  });
-  video.srcObject = stream;
-  return new Promise(res => video.onloadedmetadata = () => video.play() & res());
-}
+    let model = null;
+    let lastExpression = "--";
 
-function classifyExpression(landmarks) {
-  if (!landmarks) return "--";
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" }, // 前鏡頭
+        audio: false
+      });
+      video.srcObject = stream;
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => {
+          video.play();
+          resizeCanvas();
+          resolve();
+        };
+      });
+    }
 
-  const leftEye = landmarks[159].y - landmarks[145].y;
-  const rightEye = landmarks[386].y - landmarks[374].y;
-  const mouthOpen = landmarks[13].y - landmarks[14].y;
+    function resizeCanvas() {
+      canvas.width = video.videoWidth || 360;
+      canvas.height = video.videoHeight || 480;
+    }
 
-  if (mouthOpen > 9) return "😮 驚訝";
-  if (mouthOpen < 3) return "😐 中性";
-  if (leftEye < 1.5 && rightEye < 1.5) return "😆 大笑";
-  return "🙂 微笑";
-}
+    function classifyExpression(keypoints) {
+      if (!keypoints || keypoints.length === 0) return "--";
 
-async function loop() {
-  const faces = await model.estimateFaces({
-    input: video,
-    predictIrises: true
-  });
+      // 這裡用幾個簡單特徵當玩具版表情辨識
+      // 找幾個重要點（用 name 來找，避免版本差異）
+      const byName = (name) => keypoints.find(k => k.name === name);
 
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+      const upperLip = byName("lipsUpperOuter");
+      const lowerLip = byName("lipsLowerOuter");
+      const leftEyeUpper = byName("leftEyeUpper0");
+      const leftEyeLower = byName("leftEyeLower0");
+      const rightEyeUpper = byName("rightEyeUpper0");
+      const rightEyeLower = byName("rightEyeLower0");
 
-  if (faces.length > 0) {
-    const pts = faces[0].scaledMesh;
+      let mouthOpen = 0;
+      if (upperLip && lowerLip) {
+        mouthOpen = Math.abs(lowerLip.y - upperLip.y);
+      }
 
-    ctx.fillStyle = "#38bdf8";
-    pts.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p[0], p[1], 2, 0, Math.PI * 2);
-      ctx.fill();
+      let leftEyeOpen = 0;
+      let rightEyeOpen = 0;
+      if (leftEyeUpper && leftEyeLower) {
+        leftEyeOpen = Math.abs(leftEyeLower.y - leftEyeUpper.y);
+      }
+      if (rightEyeUpper && rightEyeLower) {
+        rightEyeOpen = Math.abs(rightEyeLower.y - rightEyeUpper.y);
+      }
+
+      // 粗略判斷：數值會依不同裝置略有差異，不需要太精準
+      if (mouthOpen > 8) {
+        return "😮 驚訝";
+      } else if (mouthOpen > 4) {
+        return "😆 大笑";
+      } else if (mouthOpen < 2 && leftEyeOpen < 3 && rightEyeOpen < 3) {
+        return "😐 放鬆 / 中性";
+      } else {
+        return "🙂 微笑";
+      }
+    }
+
+    function drawFace(keypoints) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!keypoints || keypoints.length === 0) return;
+
+      ctx.fillStyle = "#38bdf8";
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 8;
+
+      keypoints.forEach(p => {
+        const x = p.x;
+        const y = p.y;
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    async function loop() {
+      if (!model) {
+        requestAnimationFrame(loop);
+        return;
+      }
+
+      let faces = [];
+      try {
+        faces = await model.estimateFaces({
+          input: video,
+          flipHorizontal: true,
+          predictIrises: false
+        });
+      } catch (e) {
+        console.error(e);
+      }
+
+      if (!faces || faces.length === 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        expressionLabel.textContent = "表情：--";
+        requestAnimationFrame(loop);
+        return;
+      }
+
+      const face = faces[0];
+      const keypoints = face.keypoints || face.annotations || [];
+      drawFace(keypoints);
+
+      const expr = classifyExpression(keypoints);
+      lastExpression = expr;
+      expressionLabel.textContent = "表情：" + expr;
+
+      requestAnimationFrame(loop);
+    }
+
+    async function main() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("瀏覽器不支援相機，請改用 iPhone Safari 或新版 Chrome。");
+        return;
+      }
+
+      await setupCamera();
+      window.addEventListener("resize", resizeCanvas);
+
+      await tf.ready();
+
+      // ⭐ 關鍵：使用 mediapipe runtime + solutionPath
+      model = await faceLandmarksDetection.load(
+        faceLandmarksDetection.SupportedPackages.mediapipeFacemesh,
+        {
+          runtime: "mediapipe",
+          solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"
+        }
+      );
+
+      loop();
+    }
+
+    main().catch(err => {
+      console.error(err);
+      alert("初始化失敗：" + err.message);
     });
-
-    const expression = classifyExpression(pts);
-    label.textContent = "表情：" + expression;
-  }
-
-  requestAnimationFrame(loop);
-}
-
-(async () => {
-  await setupCamera();
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-
-  model = await faceLandmarksDetection.load(
-    faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
-  );
-
-  loop();
-})();
-</script>
+  </script>
 </body>
 </html>
