@@ -2,56 +2,185 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit 手勢猜拳 Demo</title>
+  <title>GameFit Demo Hub</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <link rel="stylesheet" href="hand.css" />
-
-  <!-- TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <!-- Hand Pose Detection -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
-  <!-- MediaPipe Hands backend assets -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #0f172a, #020617);
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 16px;
+    }
+    #app {
+      width: 100%;
+      max-width: 520px;
+    }
+    h1 {
+      font-size: 22px;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 12px;
+      text-align: center;
+      color: #9ca3af;
+      margin-bottom: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    @media (min-width: 640px) {
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.95);
+      border-radius: 14px;
+      padding: 10px 10px 12px;
+      border: 1px solid #1f2937;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .icon {
+      font-size: 22px;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .tag {
+      font-size: 10px;
+      color: #38bdf8;
+    }
+    .desc {
+      font-size: 11px;
+      color: #9ca3af;
+      line-height: 1.4;
+    }
+    .btn {
+      margin-top: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid #38bdf8;
+      background: #020617;
+      color: #e5e7eb;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn:active {
+      transform: scale(0.97);
+    }
+    .footer {
+      margin-top: 16px;
+      font-size: 11px;
+      color: #6b7280;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
 </head>
 <body>
   <div id="app">
-    <h1>GameFit 手勢猜拳 Demo</h1>
+    <h1>GameFit Demo Hub</h1>
+    <div class="subtitle">
+      手機即時骨架偵測 · 動作數據 · 運動遊戲化 Demo 集中入口
+    </div>
 
-    <div id="video-container">
-      <video id="video" playsinline></video>
-      <canvas id="overlay"></canvas>
+    <div class="grid">
+      <!-- 1. 全身骨架基本版 -->
+      <div class="card">
+        <div>
+          <div class="card-header">
+            <div class="icon">🧍‍♂️</div>
+            <div>
+              <div class="title">全身骨架偵測</div>
+              <div class="tag">Pose / 角度基礎</div>
+            </div>
+          </div>
+          <div class="desc">
+            以手機鏡頭即時偵測全身骨架，顯示關節節點與連線。<br>
+            之後所有動作數據與遊戲判定都以這個骨架為基礎。
+          </div>
+        </div>
+        <a class="btn" href="pose_demo.html">開啟 Demo</a>
+      </div>
 
-      <!-- 現在可以切換前 / 後鏡頭 -->
-      <button id="switchCamBtn">切換鏡頭</button>
+      <!-- 2. 手部骨架＋猜拳 -->
+      <div class="card">
+        <div>
+          <div class="card-header">
+            <div class="icon">✋</div>
+            <div>
+              <div class="title">手部骨架與猜拳</div>
+              <div class="tag">Hand Pose / 手勢</div>
+            </div>
+          </div>
+          <div class="desc">
+            只用手機前鏡頭即可偵測單手骨架，辨識石頭 / 剪刀 / 布。<br>
+            用來延伸成手勢操控介面、遊戲指令輸入。
+          </div>
+        </div>
+        <a class="btn" href="hand_demo.html">開啟 Demo</a>
+      </div>
 
-      <div id="hud">
-        <div class="row">
-          <span class="label">狀態：</span>
-          <span id="status" class="value">初始化中…</span>
+      <!-- 3. 深蹲動作比對 -->
+      <div class="card">
+        <div>
+          <div class="card-header">
+            <div class="icon">📈</div>
+            <div>
+              <div class="title">深蹲動作比對</div>
+              <div class="tag">Motion Data / Score</div>
+            </div>
+          </div>
+          <div class="desc">
+            先錄一段「教練深蹲」，再錄一段「挑戰者深蹲」，<br>
+            系統比較膝蓋角度曲線，計算動作相似度分數（0–100）。
+          </div>
         </div>
-        <div class="row">
-          <span class="label">偵測手勢：</span>
-          <span id="gesture" class="value big">--</span>
+        <a class="btn" href="motion_demo.html">開啟 Demo</a>
+      </div>
+
+      <!-- 4. Avatar 同步深蹲 -->
+      <div class="card">
+        <div>
+          <div class="card-header">
+            <div class="icon">🎮</div>
+            <div>
+              <div class="title">Avatar 同步深蹲</div>
+              <div class="tag">Avatar / 遊戲化控制</div>
+            </div>
+          </div>
+          <div class="desc">
+            使用者做深蹲時，下方 2D Avatar 會依膝蓋角度同步蹲下、站起，<br>
+            展示「骨架 → 動作數據 → 控制角色」的完整流程。
+          </div>
         </div>
-        <div class="row small">
-          <span class="label">信心度：</span>
-          <span id="confidence" class="value">0</span><span class="unit">%</span>
-        </div>
-        <div class="bar">
-          <div id="confidence-bar"></div>
-        </div>
+        <a class="btn" href="avatar_demo.html">開啟 Demo</a>
       </div>
     </div>
 
-    <p class="tip">
-      建議用 iPhone Safari 開啟 hand.html。<br>
-      按「允許」相機權限。<br>
-      把一隻手放在畫面中央、手心朝向鏡頭，距離約 30–60 公分，試試比出：石頭 / 剪刀 / 布。<br>
-      也可以按「切換鏡頭」改用後鏡頭拍攝手。
-    </p>
+    <div class="footer">
+      建議以 iPhone Safari 全螢幕開啟，每一個 Demo 都可獨立展示。<br>
+      之後若再新增拳擊、瑜珈、K-pop 等 Demo，也可以繼續加在這個主選單裡。
+    </div>
   </div>
-
-  <script src="hand.js"></script>
 </body>
 </html>
