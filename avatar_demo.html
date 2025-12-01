@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>GameFit Avatar 同步深蹲 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- TensorFlow.js + Pose Detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #020617;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      padding: 12px;
+      gap: 10px;
+    }
+    h1 { font-size: 18px; text-align: center; }
+
+    #video-container {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 9 / 16;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #1f2937;
+    }
+    #video, #overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    #overlay { pointer-events: none; }
+
+    #angle-label {
+      font-size: 13px;
+      text-align: center;
+    }
+
+    #avatar-container {
+      width: 100%;
+      max-width: 420px;
+      height: 220px;
+      border-radius: 12px;
+      background: #0b1120;
+      border: 1px solid #1f2937;
+      overflow: hidden;
+    }
+
+    #hint {
+      font-size: 11px;
+      color: #9ca3af;
+      max-width: 420px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <h1>GameFit Avatar 同步深蹲 Demo</h1>
+
+  <div id="video-container">
+    <video id="video" playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div id="angle-label">左膝角度：--°</div>
+
+  <div id="avatar-container">
+    <canvas id="avatarCanvas"></canvas>
+  </div>
+
+  <div id="hint">
+    使用方式：<br>
+    1. 用 <b>後鏡頭</b> 對著自己，退後一點讓髖關節～膝蓋～腳踝都入鏡。<br>
+    2. 緩慢做深蹲，上方會看到骨架 + 左膝角度。<br>
+    3. 下方的小人 Avatar 會跟著你的膝蓋角度一起蹲下、站起。<br>
+    這就是「骨架 → 動作數據 → 控制角色」的最小實作。<br>
+  </div>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+    const angleLabel = document.getElementById("angle-label");
+
+    const avatarCanvas = document.getElementById("avatarCanvas");
+    const actx = avatarCanvas.getContext("2d");
+
+    let detector = null;
+    let lastStream = null;
+    let lastKneeAngle = 0; // 平滑後的膝蓋角度
+
+    const adjacentPairs = [
+      ["left_shoulder", "right_shoulder"],
+      ["left_shoulder", "left_elbow"],
+      ["left_elbow", "left_wrist"],
+      ["right_shoulder", "right_elbow"],
+      ["right_elbow", "right_wrist"],
+      ["left_shoulder", "left_hip"],
+      ["right_shoulder", "right_hip"],
+      ["left_hip", "right_hip"],
+      ["left_hip", "left_knee"],
+      ["left_knee", "left_ankle"],
+      ["right_hip", "right_knee"],
+      ["right_knee", "right_ankle"]
+    ];
+
+    function angleBetween(a, b, c) {
+      const ab = { x: a.x - b.x, y: a.y - b.y };
+      const cb = { x: c.x - b.x, y: c.y - b.y };
+      const dot = ab.x * cb.x + ab.y * cb.y;
+      const magAB = Math.hypot(ab.x, ab.y);
+      const magCB = Math.hypot(cb.x, cb.y);
+      if (!magAB || !magCB) return 0;
+      const cos = dot / (magAB * magCB);
+      const clamped = Math.max(-1, Math.min(1, cos));
+      return (Math.acos(clamped) * 180) / Math.PI;
+    }
+
+    async function setupCamera() {
+      if (lastStream) lastStream.getTracks().forEach(t => t.stop());
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+
+      lastStream = stream;
+      video.srcObject = stream;
+
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => {
+          video.play();
+          resizeCanvas();
+          resizeAvatarCanvas();
+          resolve();
+        };
+      });
+    }
+
+    function resizeCanvas() {
+      canvas.width = video.videoWidth || 360;
+      canvas.height = video.videoHeight || 640;
+    }
+
+    function resizeAvatarCanvas() {
+      const rect = document.getElementById("avatar-container").getBoundingClientRect();
+      avatarCanvas.width = rect.width;
+      avatarCanvas.height = rect.height;
+    }
+
+    function drawPose(keypoints) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!keypoints || !video.videoWidth || !video.videoHeight) return;
+
+      const toScreen = (kp) => ({
+        x: (kp.x / video.videoWidth) * canvas.width,
+        y: (kp.y / video.videoHeight) * canvas.height
+      });
+
+      ctx.save();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#38bdf8";
+      ctx.shadowColor = "#38bdf8";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      adjacentPairs.forEach(([aName, bName]) => {
+        const a = keypoints.find(k => k.name === aName || k.part === aName);
+        const b = keypoints.find(k => k.name === bName || k.part === bName);
+        if (!a || !b || a.score < 0.3 || b.score < 0.3) return;
+        const sa = toScreen(a);
+        const sb = toScreen(b);
+        ctx.moveTo(sa.x, sa.y);
+        ctx.lineTo(sb.x, sb.y);
+      });
+      ctx.stroke();
+      ctx.restore();
+
+      keypoints.forEach(kp => {
+        if (kp.score < 0.3) return;
+        const { x, y } = toScreen(kp);
+
+        ctx.save();
+        ctx.fillStyle = "rgba(56,189,248,0.25)";
+        ctx.shadowColor = "#38bdf8";
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function computeKneeAngle(keypoints) {
+      const hip = keypoints.find(k => k.name === "left_hip" || k.part === "left_hip");
+      const knee = keypoints.find(k => k.name === "left_knee" || k.part === "left_knee");
+      const ankle = keypoints.find(k => k.name === "left_ankle" || k.part === "left_ankle");
+
+      if (!hip || !knee || !ankle ||
+          hip.score < 0.3 || knee.score < 0.3 || ankle.score < 0.3) {
+        return null;
+      }
+
+      return angleBetween(
+        { x: hip.x, y: hip.y },
+        { x: knee.x, y: knee.y },
+        { x: ankle.x, y: ankle.y }
+      );
+    }
+
+    /* -------- 2D Avatar 繪圖：用膝蓋角度控制小人 -------- */
+    function drawAvatar(angleDeg) {
+      const w = avatarCanvas.width;
+      const h = avatarCanvas.height;
+      actx.clearRect(0, 0, w, h);
+
+      // 背景地板
+      actx.fillStyle = "#020617";
+      actx.fillRect(0, 0, w, h);
+      actx.fillStyle = "#111827";
+      actx.fillRect(0, h * 0.7, w, h * 0.3);
+
+      const centerX = w * 0.5;
+      const hipYBase = h * 0.6;
+
+      // 將膝蓋角度 180~60 映射成「蹲下程度」0~1
+      const a = Math.max(60, Math.min(180, angleDeg || 180));
+      const squatAmount = (180 - a) / (180 - 60); // 0 = 站直, 1 = 很深蹲
+
+      // 依據深蹲程度，整個身體往下移一點
+      const hipY = hipYBase + squatAmount * 30;
+
+      // 身體長度設定
+      const torsoLen = 50;
+      const legUpperLen = 40;
+      const legLowerLen = 40;
+
+      // 頭
+      const headR = 16;
+      const headY = hipY - torsoLen - headR * 1.8;
+      actx.fillStyle = "#f97316";
+      actx.beginPath();
+      actx.arc(centerX, headY, headR, 0, Math.PI * 2);
+      actx.fill();
+
+      // 身體（從肩膀到髖關節）
+      const shoulderY = hipY - torsoLen;
+      actx.strokeStyle = "#38bdf8";
+      actx.lineWidth = 5;
+      actx.lineCap = "round";
+      actx.beginPath();
+      actx.moveTo(centerX, shoulderY);
+      actx.lineTo(centerX, hipY);
+      actx.stroke();
+
+      // 手臂：簡單畫成張開的線
+      const armLen = 35;
+      actx.beginPath();
+      actx.moveTo(centerX, shoulderY + 8);
+      actx.lineTo(centerX - armLen, shoulderY + 18);
+      actx.moveTo(centerX, shoulderY + 8);
+      actx.lineTo(centerX + armLen, shoulderY + 18);
+      actx.stroke();
+
+      // 腿：左腿用膝蓋角度控制，右腿簡單 mirror
+
+      // 左腿關節（2D 小人座標）
+      const leftHip = { x: centerX - 10, y: hipY };
+      const rightHip = { x: centerX + 10, y: hipY };
+
+      // 站立時大腿向下，深蹲時大腿往前
+      const upperBaseAngle = Math.PI * 0.5; // 往下
+      const upperOffset = squatAmount * 0.5; // 最多往前 0.5 rad
+
+      const leftUpperAngle = upperBaseAngle - upperOffset;
+      const leftKnee = {
+        x: leftHip.x + Math.cos(leftUpperAngle) * legUpperLen,
+        y: leftHip.y + Math.sin(leftUpperAngle) * legUpperLen
+      };
+
+      // 小腿依膝蓋角度彎曲
+      const kneeBend = squatAmount * 1.2; // 彎曲越大
+      const leftLowerAngle = leftUpperAngle + kneeBend;
+      const leftAnkle = {
+        x: leftKnee.x + Math.cos(leftLowerAngle) * legLowerLen,
+        y: leftKnee.y + Math.sin(leftLowerAngle) * legLowerLen
+      };
+
+      // 右腿就用比較小的彎曲（做一點對稱感）
+      const rightUpperAngle = upperBaseAngle - upperOffset * 0.8;
+      const rightKnee = {
+        x: rightHip.x + Math.cos(rightUpperAngle) * legUpperLen,
+        y: rightHip.y + Math.sin(rightUpperAngle) * legUpperLen
+      };
+      const rightLowerAngle = rightUpperAngle + kneeBend * 0.9;
+      const rightAnkle = {
+        x: rightKnee.x + Math.cos(rightLowerAngle) * legLowerLen,
+        y: rightKnee.y + Math.sin(rightLowerAngle) * legLowerLen
+      };
+
+      // 畫腿
+      actx.strokeStyle = "#22c55e";
+      actx.lineWidth = 5;
+      actx.beginPath();
+      // 左腿
+      actx.moveTo(leftHip.x, leftHip.y);
+      actx.lineTo(leftKnee.x, leftKnee.y);
+      actx.lineTo(leftAnkle.x, leftAnkle.y);
+      // 右腿
+      actx.moveTo(rightHip.x, rightHip.y);
+      actx.lineTo(rightKnee.x, rightKnee.y);
+      actx.lineTo(rightAnkle.x, rightAnkle.y);
+      actx.stroke();
+
+      // 腳底
+      actx.lineWidth = 4;
+      actx.beginPath();
+      actx.moveTo(leftAnkle.x - 10, leftAnkle.y + 4);
+      actx.lineTo(leftAnkle.x + 10, leftAnkle.y + 4);
+      actx.moveTo(rightAnkle.x - 10, rightAnkle.y + 4);
+      actx.lineTo(rightAnkle.x + 10, rightAnkle.y + 4);
+      actx.stroke();
+    }
+
+    /* -------- MoveNet 迴圈 -------- */
+    async function poseLoop() {
+      if (!detector) {
+        requestAnimationFrame(poseLoop);
+        return;
+      }
+
+      let poses = [];
+      try {
+        poses = await detector.estimatePoses(video, { maxPoses: 1 });
+      } catch (e) {
+        console.error(e);
+      }
+
+      if (!poses || poses.length === 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        angleLabel.textContent = "左膝角度：--°（請退後一點讓下半身入鏡）";
+        drawAvatar(180);
+        requestAnimationFrame(poseLoop);
+        return;
+      }
+
+      const kp = poses[0].keypoints;
+      drawPose(kp);
+
+      const ang = computeKneeAngle(kp);
+      if (ang == null) {
+        angleLabel.textContent = "左膝角度：--°（偵測不到左腿）";
+        drawAvatar(180);
+      } else {
+        // 做一點平滑，不然會抖
+        const smooth = 0.8;
+        lastKneeAngle = lastKneeAngle * smooth + ang * (1 - smooth);
+
+        angleLabel.textContent = "左膝角度：" + Math.round(lastKneeAngle) + "°";
+        drawAvatar(lastKneeAngle);
+      }
+
+      requestAnimationFrame(poseLoop);
+    }
+
+    async function main() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("瀏覽器不支援相機，請改用 iPhone Safari 或新版 Chrome。");
+        return;
+      }
+
+      await setupCamera();
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        resizeAvatarCanvas();
+      });
+
+      await tf.ready();
+
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+          runtime: "tfjs"
+        }
+      );
+
+      poseLoop();
+    }
+
+    main().catch(err => {
+      console.error(err);
+      alert("初始化失敗：" + err.message);
+    });
+  </script>
+</body>
+</html>
