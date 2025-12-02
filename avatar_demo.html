@@ -83,8 +83,8 @@
   <div id="hint">
     使用方式：<br>
     1. 用 <b>後鏡頭</b> 對著自己，退後一點讓髖關節～膝蓋～腳踝都入鏡。<br>
-    2. 緩慢做深蹲，上方會看到骨架 + 左膝角度。<br>
-    3. 下方的小人 Avatar 會跟著你的膝蓋角度一起蹲下、站起。<br>
+    2. 親自做深蹲（站直 → 蹲下 → 起來），會比對著電視更容易看到差異。<br>
+    3. 上方顯示骨架與膝蓋角度；下方 Avatar 會跟著同步蹲下、站起。<br>
   </div>
 
   <script>
@@ -98,9 +98,8 @@
 
     let detector = null;
     let lastStream = null;
-    let lastKneeAngle = 180;   // 平滑後的膝蓋角度（初始站直）
+    let lastKneeAngle = 170; // 平滑後的膝蓋角度
 
-    // 全身骨架連線
     const adjacentPairs = [
       ["left_shoulder", "right_shoulder"],
       ["left_shoulder", "left_elbow"],
@@ -209,7 +208,6 @@
       });
     }
 
-    // 為了避免 MoveNet / 其他模型 keypoints 命名差異，這裡做一個 helper：
     function getPoint(keypoints, name, fallbackIndexArray = []) {
       let pt = keypoints.find(k => k.name === name || k.part === name);
       if (pt) return pt;
@@ -220,10 +218,17 @@
     }
 
     function computeKneeAngle(keypoints) {
-      // 優先用 name，失敗就用 index（MoveNet 左臀=11, 左膝=13, 左踝=15）
-      const hip   = getPoint(keypoints, "left_hip",   [11, 23]);
-      const knee  = getPoint(keypoints, "left_knee",  [13, 25]);
-      const ankle = getPoint(keypoints, "left_ankle", [15, 27]);
+      // 左腳優先，不行就用右腳
+      let hip   = getPoint(keypoints, "left_hip",   [11, 23]);
+      let knee  = getPoint(keypoints, "left_knee",  [13, 25]);
+      let ankle = getPoint(keypoints, "left_ankle", [15, 27]);
+
+      if (!hip || !knee || !ankle ||
+          hip.score < 0.2 || knee.score < 0.2 || ankle.score < 0.2) {
+        hip   = getPoint(keypoints, "right_hip",   [12, 24]);
+        knee  = getPoint(keypoints, "right_knee",  [14, 26]);
+        ankle = getPoint(keypoints, "right_ankle", [16, 28]);
+      }
 
       if (!hip || !knee || !ankle ||
           hip.score < 0.2 || knee.score < 0.2 || ankle.score < 0.2) {
@@ -250,15 +255,15 @@
       const centerX = w * 0.5;
       const hipYBase = h * 0.6;
 
-      // 限制膝蓋角度在 60~180
-      const clamped = Math.max(60, Math.min(180, angleDeg || 180));
-      const squatAmount = (180 - clamped) / (180 - 60); // 0=站直, 1=深蹲
+      // 🔥 放大深蹲效果：用 80~170 度作映射
+      const clamped = Math.max(80, Math.min(170, angleDeg || 170));
+      const squatAmount = (170 - clamped) / (170 - 80); // 0~1
 
-      const hipY = hipYBase + squatAmount * 30;
+      const hipY = hipYBase + squatAmount * 45; // 多蹲一點，動作明顯
 
       const torsoLen = 50;
-      const legUpperLen = 40;
-      const legLowerLen = 40;
+      const legUpperLen = 42;
+      const legLowerLen = 42;
 
       const headR = 16;
       const headY = hipY - torsoLen - headR * 1.8;
@@ -276,19 +281,20 @@
       actx.lineTo(centerX, hipY);
       actx.stroke();
 
-      const armLen = 35;
+      const armLen = 38;
       actx.beginPath();
       actx.moveTo(centerX, shoulderY + 8);
-      actx.lineTo(centerX - armLen, shoulderY + 18);
+      actx.lineTo(centerX - armLen, shoulderY + 20);
       actx.moveTo(centerX, shoulderY + 8);
-      actx.lineTo(centerX + armLen, shoulderY + 18);
+      actx.lineTo(centerX + armLen, shoulderY + 20);
       actx.stroke();
 
-      const leftHip = { x: centerX - 10, y: hipY };
-      const rightHip = { x: centerX + 10, y: hipY };
+      const leftHip = { x: centerX - 12, y: hipY };
+      const rightHip = { x: centerX + 12, y: hipY };
 
       const upperBaseAngle = Math.PI * 0.5;
-      const upperOffset = squatAmount * 0.5;
+      const upperOffset = squatAmount * 0.7;   // 大腿往前角度
+      const kneeBend = squatAmount * 1.4;      // 小腿彎曲
 
       const leftUpperAngle = upperBaseAngle - upperOffset;
       const leftKnee = {
@@ -296,7 +302,6 @@
         y: leftHip.y + Math.sin(leftUpperAngle) * legUpperLen
       };
 
-      const kneeBend = squatAmount * 1.2;
       const leftLowerAngle = leftUpperAngle + kneeBend;
       const leftAnkle = {
         x: leftKnee.x + Math.cos(leftLowerAngle) * legLowerLen,
@@ -327,11 +332,18 @@
 
       actx.lineWidth = 4;
       actx.beginPath();
-      actx.moveTo(leftAnkle.x - 10, leftAnkle.y + 4);
-      actx.lineTo(leftAnkle.x + 10, leftAnkle.y + 4);
-      actx.moveTo(rightAnkle.x - 10, rightAnkle.y + 4);
-      actx.lineTo(rightAnkle.x + 10, rightAnkle.y + 4);
+      actx.moveTo(leftAnkle.x - 11, leftAnkle.y + 4);
+      actx.lineTo(leftAnkle.x + 11, leftAnkle.y + 4);
+      actx.moveTo(rightAnkle.x - 11, rightAnkle.y + 4);
+      actx.lineTo(rightAnkle.x + 11, rightAnkle.y + 4);
       actx.stroke();
+
+      // 在右上角顯示目前角度 & 深蹲百分比，方便你確認有在更新
+      actx.fillStyle = "#e5e7eb";
+      actx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+      actx.textAlign = "right";
+      actx.fillText(`角度: ${Math.round(angleDeg)}°`, w - 8, 14);
+      actx.fillText(`深蹲: ${Math.round(squatAmount * 100)}%`, w - 8, 28);
     }
 
     async function poseLoop() {
@@ -360,17 +372,14 @@
 
       const ang = computeKneeAngle(kp);
       if (ang == null) {
-        angleLabel.textContent = "左膝角度：--°（偵測不到左腿）";
+        angleLabel.textContent = "左膝角度：--°（偵測不到腿部，請再調整位置）";
       } else {
-        const alpha = 0.9; // 平滑係數，數字越大越穩
+        const alpha = 0.85; // 平滑係數
         lastKneeAngle = lastKneeAngle * alpha + ang * (1 - alpha);
-
-        const display = Math.round(lastKneeAngle);
-        angleLabel.textContent = "左膝角度：" + display + "°";
+        angleLabel.textContent = "左膝角度：" + Math.round(lastKneeAngle) + "°";
       }
 
       drawAvatar(lastKneeAngle);
-
       requestAnimationFrame(poseLoop);
     }
 
