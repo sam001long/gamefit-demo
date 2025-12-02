@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit 臉部表情偵測 Demo</title>
+  <title>GameFit 臉部骨架＋表情偵測 Demo</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- TensorFlow.js + Face Landmarks -->
@@ -12,7 +12,6 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      margin: 0;
       background: #020617;
       color: #e5e7eb;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -21,6 +20,7 @@
       align-items: center;
       padding: 12px;
       gap: 10px;
+      min-height: 100vh;
     }
     h1 { font-size: 18px; text-align: center; }
     #videoContainer {
@@ -69,7 +69,7 @@
     使用方式：<br>
     1. 使用前鏡頭，把臉移到畫面中央。<br>
     2. 嘴巴張大、微笑、放鬆表情，觀察上方文字變化。<br>
-    3. 螢幕上的藍色點為臉部骨架（多個特徵點）。<br>
+    3. 螢幕上的藍色點為臉部骨架特徵點。<br>
   </div>
 
   <script>
@@ -78,8 +78,7 @@
     const ctx = canvas.getContext("2d");
     const expressionLabel = document.getElementById("expression");
 
-    let model = null;
-    let lastExpression = "--";
+    let detector = null;
 
     async function setupCamera() {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -104,8 +103,7 @@
     function classifyExpression(keypoints) {
       if (!keypoints || keypoints.length === 0) return "--";
 
-      // 這裡用幾個簡單特徵當玩具版表情辨識
-      // 找幾個重要點（用 name 來找，避免版本差異）
+      // 用少數幾個關鍵點簡單判斷：嘴巴開合 + 眼睛開合
       const byName = (name) => keypoints.find(k => k.name === name);
 
       const upperLip = byName("lipsUpperOuter");
@@ -129,16 +127,10 @@
         rightEyeOpen = Math.abs(rightEyeLower.y - rightEyeUpper.y);
       }
 
-      // 粗略判斷：數值會依不同裝置略有差異，不需要太精準
-      if (mouthOpen > 8) {
-        return "😮 驚訝";
-      } else if (mouthOpen > 4) {
-        return "😆 大笑";
-      } else if (mouthOpen < 2 && leftEyeOpen < 3 && rightEyeOpen < 3) {
-        return "😐 放鬆 / 中性";
-      } else {
-        return "🙂 微笑";
-      }
+      if (mouthOpen > 10) return "😮 驚訝";
+      if (mouthOpen > 5)  return "😆 大笑";
+      if (mouthOpen < 2 && leftEyeOpen < 3 && rightEyeOpen < 3) return "😐 放鬆 / 中性";
+      return "🙂 微笑";
     }
 
     function drawFace(keypoints) {
@@ -159,17 +151,15 @@
     }
 
     async function loop() {
-      if (!model) {
+      if (!detector) {
         requestAnimationFrame(loop);
         return;
       }
 
       let faces = [];
       try {
-        faces = await model.estimateFaces({
-          input: video,
-          flipHorizontal: true,
-          predictIrises: false
+        faces = await detector.estimateFaces(video, {
+          flipHorizontal: true
         });
       } catch (e) {
         console.error(e);
@@ -183,11 +173,10 @@
       }
 
       const face = faces[0];
-      const keypoints = face.keypoints || face.annotations || [];
+      const keypoints = face.keypoints || [];
       drawFace(keypoints);
 
       const expr = classifyExpression(keypoints);
-      lastExpression = expr;
       expressionLabel.textContent = "表情：" + expr;
 
       requestAnimationFrame(loop);
@@ -204,9 +193,9 @@
 
       await tf.ready();
 
-      // ⭐ 關鍵：使用 mediapipe runtime + solutionPath
-      model = await faceLandmarksDetection.load(
-        faceLandmarksDetection.SupportedPackages.mediapipeFacemesh,
+      // ✅ 正確的 FaceMesh 啟動方式：createDetector + SupportedModels
+      detector = await faceLandmarksDetection.createDetector(
+        faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
         {
           runtime: "mediapipe",
           solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"
