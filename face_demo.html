@@ -103,7 +103,6 @@
     function classifyExpression(keypoints) {
       if (!keypoints || keypoints.length === 0) return "--";
 
-      // 用少數幾個關鍵點簡單判斷：嘴巴開合 + 眼睛開合
       const byName = (name) => keypoints.find(k => k.name === name);
 
       const upperLip = byName("lipsUpperOuter");
@@ -114,9 +113,7 @@
       const rightEyeLower = byName("rightEyeLower0");
 
       let mouthOpen = 0;
-      if (upperLip && lowerLip) {
-        mouthOpen = Math.abs(lowerLip.y - upperLip.y);
-      }
+      if (upperLip && lowerLip) mouthOpen = Math.abs(lowerLip.y - upperLip.y);
 
       let leftEyeOpen = 0;
       let rightEyeOpen = 0;
@@ -193,12 +190,10 @@
 
       await tf.ready();
 
-      // ✅ 正確的 FaceMesh 啟動方式：createDetector + SupportedModels
       detector = await faceLandmarksDetection.createDetector(
         faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
         {
-          runtime: "mediapipe",
-          solutionPath: "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"
+          runtime: "tfjs"
         }
       );
 
