@@ -5,7 +5,7 @@
   <title>GameFit 臉部骨架 Demo（BlazeFace）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- 只用 tfjs + blazeface，避免 Mediapipe 相容問題 -->
+  <!-- tfjs + blazeface -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
@@ -60,8 +60,8 @@
   <div id="hint">
     使用方式：<br>
     1. 使用前鏡頭，將臉移到畫面中央。<br>
-    2. 偵測成功時，會畫出雙眼、鼻子、嘴巴、雙耳等關鍵點。<br>
-    3. 之後若要做表情辨識，我們可以再在此基礎上加上分類邏輯。<br>
+    2. 偵測成功時，會畫出雙眼、鼻子、嘴巴、雙耳等關鍵點與連線。<br>
+    3. 之後可在此骨架上再加表情分類或遊戲互動。<br>
   </div>
 
 <script>
@@ -88,6 +88,8 @@ async function setupCamera() {
   });
 }
 
+// BlazeFace landmarks 順序：
+// 0: 右眼, 1: 左眼, 2: 鼻子, 3: 嘴巴, 4: 右耳, 5: 左耳
 function drawPredictions(predictions) {
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
@@ -96,29 +98,58 @@ function drawPredictions(predictions) {
     return;
   }
 
-  statusEl.textContent = "已偵測到臉部關鍵點";
+  statusEl.textContent = "已偵測到臉部骨架";
 
   predictions.forEach(p => {
-    const landmarks = p.landmarks; // [右眼, 左眼, 鼻子, 嘴巴, 右耳, 左耳]
+    const landmarks = p.landmarks;
 
-    // 畫關鍵點
-    ctx.fillStyle   = "#38bdf8";
+    // --- 線條骨架 ---
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#38bdf8";
     ctx.shadowColor = "#38bdf8";
-    ctx.shadowBlur  = 10;
+    ctx.shadowBlur = 10;
+
+    // 定義要連線的 index pair
+    const pairs = [
+      [0, 2], // 右眼 - 鼻子
+      [1, 2], // 左眼 - 鼻子
+      [2, 3], // 鼻子 - 嘴巴
+      [0, 1], // 右眼 - 左眼（眼睛上緣）
+      [4, 5]  // 右耳 - 左耳（耳朵連線）
+    ];
+
+    ctx.beginPath();
+    pairs.forEach(([a,b]) => {
+      const pa = landmarks[a];
+      const pb = landmarks[b];
+      if (!pa || !pb) return;
+      ctx.moveTo(pa[0], pa[1]);
+      ctx.lineTo(pb[0], pb[1]);
+    });
+    ctx.stroke();
+
+    // --- 關鍵點 ---
+    ctx.fillStyle   = "#38bdf8";
+    ctx.shadowBlur  = 12;
 
     landmarks.forEach(([x,y]) => {
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    // 略畫一個臉部外框（bounding box）
-    const [x1, y1, x2, y2] = p.topLeft.concat(p.bottomRight);
+    // --- 臉部外框（bounding box） ---
+    const [x1, y1] = p.topLeft;
+    const [x2, y2] = p.bottomRight;
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(148,163,184,0.8)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(x1, y1, x2 - x1, y2 - y1, 8);
+    if (ctx.roundRect) {
+      ctx.roundRect(x1, y1, x2 - x1, y2 - y1, 8);
+    } else {
+      ctx.rect(x1, y1, x2 - x1, y2 - y1);
+    }
     ctx.stroke();
   });
 }
