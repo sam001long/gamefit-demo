@@ -2,60 +2,74 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>GameFit 臉部偵測 Demo</title>
+  <title>GameFit 臉部骨架 Demo（BlazeFace）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+  <!-- 只用 tfjs + blazeface，避免 Mediapipe 相容問題 -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 
   <style>
     body {
       margin: 0;
       background: #020617;
-      color: white;
-      font-family: -apple-system;
+      color: #e5e7eb;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
       text-align: center;
       padding: 12px;
     }
     h1 { font-size: 20px; margin-bottom: 6px; }
-    #state { color:#38bdf8; margin-bottom: 8px; }
+    #status { font-size: 14px; color: #38bdf8; margin-bottom: 8px; }
     #box {
       position: relative;
       width: 100%;
       max-width: 420px;
-      margin: auto;
+      margin: 0 auto;
       aspect-ratio: 3/4;
-      background:black;
-      border-radius:12px;
-      overflow:hidden;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #1f2937;
     }
     #video, #canvas {
-      position:absolute;
-      inset:0;
-      width:100%;
-      height:100%;
-      object-fit:contain;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
     }
-    #canvas { pointer-events:none; }
+    #canvas { pointer-events: none; }
+    #hint {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
   </style>
 </head>
 
 <body>
-  <h1>臉部骨架＋表情偵測</h1>
-  <div id="state">表情：--</div>
+  <h1>臉部骨架 Demo（BlazeFace）</h1>
+  <div id="status">載入中…</div>
 
   <div id="box">
     <video id="video" playsinline></video>
     <canvas id="canvas"></canvas>
   </div>
 
-<script>
-let detector;
+  <div id="hint">
+    使用方式：<br>
+    1. 使用前鏡頭，將臉移到畫面中央。<br>
+    2. 偵測成功時，會畫出雙眼、鼻子、嘴巴、雙耳等關鍵點。<br>
+    3. 之後若要做表情辨識，我們可以再在此基礎上加上分類邏輯。<br>
+  </div>
 
-const video = document.getElementById("video");
+<script>
+let model;
+const video  = document.getElementById("video");
 const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const state = document.getElementById("state");
+const ctx    = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
 
 async function setupCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -63,72 +77,77 @@ async function setupCamera() {
     audio: false
   });
   video.srcObject = stream;
-  return new Promise(res=>{
+
+  return new Promise(resolve => {
     video.onloadedmetadata = () => {
       video.play();
-      canvas.width = video.videoWidth;
+      canvas.width  = video.videoWidth;
       canvas.height = video.videoHeight;
-      res();
+      resolve();
     };
   });
 }
 
-function classify(keypoints) {
-  // 使用嘴巴上下距離作表情簡易判斷
-  const upper = keypoints.find(p=>p.name==="lipsUpperOuter");
-  const lower = keypoints.find(p=>p.name==="lipsLowerOuter");
-  if (!upper || !lower) return "--";
-
-  const mouth = Math.abs(lower.y - upper.y);
-
-  if (mouth > 10) return "😮 驚訝";
-  if (mouth > 6)  return "😆 大笑";
-  if (mouth < 2)  return "😐 放鬆";
-  return "🙂 微笑";
-}
-
-function draw(keypoints) {
+function drawPredictions(predictions) {
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle="#38bdf8";
 
-  keypoints.forEach(pt=>{
+  if (!predictions || predictions.length === 0) {
+    statusEl.textContent = "尚未偵測到臉部，請靠近一點或調整光線";
+    return;
+  }
+
+  statusEl.textContent = "已偵測到臉部關鍵點";
+
+  predictions.forEach(p => {
+    const landmarks = p.landmarks; // [右眼, 左眼, 鼻子, 嘴巴, 右耳, 左耳]
+
+    // 畫關鍵點
+    ctx.fillStyle   = "#38bdf8";
+    ctx.shadowColor = "#38bdf8";
+    ctx.shadowBlur  = 10;
+
+    landmarks.forEach(([x,y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // 略畫一個臉部外框（bounding box）
+    const [x1, y1, x2, y2] = p.topLeft.concat(p.bottomRight);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(148,163,184,0.8)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, 2, 0, Math.PI*2);
-    ctx.fill();
+    ctx.roundRect(x1, y1, x2 - x1, y2 - y1, 8);
+    ctx.stroke();
   });
 }
 
 async function loop() {
-  const faces = await detector.estimateFaces({
-    input: video,
-    flipHorizontal: true
-  });
-
-  if (faces.length===0) {
-    state.textContent = "表情：--";
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-  } else {
-    const pts = faces[0].keypoints;
-    draw(pts);
-    state.textContent = "表情：" + classify(pts);
-  }
-
+  const predictions = await model.estimateFaces(video, false);
+  drawPredictions(predictions);
   requestAnimationFrame(loop);
 }
 
 async function main() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("此瀏覽器不支援相機，請改用 iPhone Safari 或新版 Chrome。");
+    return;
+  }
+
   await setupCamera();
   await tf.ready();
 
-  detector = await faceLandmarksDetection.createDetector(
-    faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-    { runtime:"tfjs" }
-  );
+  model = await blazeface.load();
+  statusEl.textContent = "模型載入完成，請將臉移到畫面中間";
 
   loop();
 }
 
-main();
+main().catch(err => {
+  console.error(err);
+  alert("初始化失敗：" + err.message);
+});
 </script>
 </body>
 </html>
